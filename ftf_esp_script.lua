@@ -1,12 +1,9 @@
--- FTF ESP Script — reorganized menu (categories + search) + Teleporte (sem search box)
--- Ajustes:
---  - Menu deitado, arredondado, com abas: Visuais | Textures | Timers
---  - "Ativar Destacar Computadores" renomeado para "Computer Esp" e movido para Visuais
---  - "Ativar Skin Cinza" renomeado para "Remove players Textures" e movido para Textures
---  - "Ativar Texture Tijolos Brancos" movido para Textures
---  - "Ativar Contador de Down" movido para Timers
---  - Removi a caixa de pesquisa do Teleport GUI
---  - Adicionado sistema de pesquisa no menu principal que filtra as opções nas categorias
+-- FTF ESP Script — UI redesenhada (layout organizado tipo Lemon HUB)
+-- - Menu deitado, arredondado, com abas
+-- - Conteúdo em ScrollingFrame vertical (cada opção é uma linha com toggle)
+-- - Sistema de pesquisa que filtra opções na aba atual
+-- - Teleport mantido (janela separada)
+-- Mantive a lógica dos ESPs, Textures e Timers do script anterior.
 
 -- Services
 local UIS = game:GetService("UserInputService")
@@ -17,9 +14,10 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- UI root
+-- Root GUI
 local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
--- cleanup old
+
+-- cleanup previous
 for _,v in pairs(CoreGui:GetChildren()) do if v.Name=="FTF_ESP_GUI_DAVID" then v:Destroy() end end
 for _,v in pairs(PlayerGui:GetChildren()) do if v.Name=="FTF_ESP_GUI_DAVID" then v:Destroy() end end
 
@@ -30,253 +28,16 @@ GUI.IgnoreGuiInset = true
 pcall(function() GUI.Parent = CoreGui end)
 if not GUI.Parent or GUI.Parent ~= CoreGui then GUI.Parent = PlayerGui end
 
--- helper storage to map buttons to their visible label
-local buttonLabelMap = {}
+-- =====================================================================
+-- Functionality (ESP, Textures, Timers) - preserved from original script
+-- I'll keep these implementations mostly unchanged and only reference state vars
+-- =====================================================================
 
--- ---------- Startup notice ----------
-local function createStartupNotice(opts)
-    opts = opts or {}
-    local duration = opts.duration or 6
-    local width = opts.width or 380
-    local height = opts.height or 68
-
-    local noticeGui = Instance.new("ScreenGui")
-    noticeGui.Name = "FTF_StartupNotice_DAVID"
-    noticeGui.ResetOnSpawn = false
-    noticeGui.Parent = GUI
-
-    local frame = Instance.new("Frame", noticeGui)
-    frame.Name = "NoticeFrame"
-    frame.Size = UDim2.new(0, width, 0, height)
-    frame.Position = UDim2.new(0.5, -width/2, 0.92, 6)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-
-    local panel = Instance.new("Frame", frame)
-    panel.Name = "Panel"
-    panel.Size = UDim2.new(1, 0, 1, 0)
-    panel.BackgroundColor3 = Color3.fromRGB(10,14,20)
-    panel.BackgroundTransparency = 0.05
-    panel.BorderSizePixel = 0
-    local corner = Instance.new("UICorner", panel); corner.CornerRadius = UDim.new(0, 14)
-    local stroke = Instance.new("UIStroke", panel); stroke.Color = Color3.fromRGB(55,140,220); stroke.Thickness = 1.2; stroke.Transparency = 0.28
-
-    local iconBg = Instance.new("Frame", panel)
-    iconBg.Size = UDim2.new(0, 36, 0, 36)
-    iconBg.Position = UDim2.new(0, 16, 0.5, -18)
-    iconBg.BackgroundColor3 = Color3.fromRGB(16,20,26)
-    local iconCorner = Instance.new("UICorner", iconBg); iconCorner.CornerRadius = UDim.new(0,10)
-    local iconLabel = Instance.new("TextLabel", iconBg)
-    iconLabel.Size = UDim2.new(1, -6, 1, -6); iconLabel.Position = UDim2.new(0,3,0,3)
-    iconLabel.BackgroundTransparency = 1; iconLabel.Font = Enum.Font.FredokaOne; iconLabel.Text = "K"
-    iconLabel.TextColor3 = Color3.fromRGB(100,170,220); iconLabel.TextSize = 20
-
-    local txt = Instance.new("TextLabel", panel)
-    txt.Size = UDim2.new(1, -96, 1, -8)
-    txt.Position = UDim2.new(0, 76, 0, 4)
-    txt.BackgroundTransparency = 1
-    txt.Font = Enum.Font.GothamBold
-    txt.TextSize = 15
-    txt.TextColor3 = Color3.fromRGB(180,200,220)
-    txt.Text = 'Clique na letra "K" para ativar o menu'
-    txt.TextXAlignment = Enum.TextXAlignment.Left
-    txt.TextWrapped = true
-
-    local hint = Instance.new("TextLabel", panel)
-    hint.Size = UDim2.new(1, -96, 0, 16)
-    hint.Position = UDim2.new(0, 76, 1, -22)
-    hint.BackgroundTransparency = 1
-    hint.Font = Enum.Font.Gotham
-    hint.TextSize = 11
-    hint.TextColor3 = Color3.fromRGB(120,140,170)
-    hint.Text = "Pressione novamente para fechar"
-    hint.TextXAlignment = Enum.TextXAlignment.Left
-
-    -- tween in/out
-    TweenService:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundTransparency = 0.0}):Play()
-    task.delay(duration, function()
-        if noticeGui and noticeGui.Parent then noticeGui:Destroy() end
-    end)
-end
-createStartupNotice()
-
--- ---------- Main menu frame (deitado) ----------
-local gWidth, gHeight = 820, 220
-local Frame = Instance.new("Frame", GUI)
-Frame.Name = "FTF_Menu_Frame"
-Frame.BackgroundColor3 = Color3.fromRGB(8,10,14)
-Frame.Size = UDim2.new(0, gWidth, 0, gHeight)
-Frame.Position = UDim2.new(0.5, -gWidth/2, 0.12, 0)
-Frame.Active = true
-Frame.Visible = false
-Frame.BorderSizePixel = 0
-Frame.ClipsDescendants = true
-local aCorner = Instance.new("UICorner", Frame); aCorner.CornerRadius = UDim.new(0,14)
-
--- Accent bar (left), title and search
-local Accent = Instance.new("Frame", Frame); Accent.Size = UDim2.new(0,10,1,0); Accent.Position = UDim2.new(0,8,0,0)
-Accent.BackgroundColor3 = Color3.fromRGB(49,157,255); Accent.BorderSizePixel = 0
-
-local Title = Instance.new("TextLabel", Frame)
-Title.Text = "FTF - David's ESP"; Title.Font = Enum.Font.FredokaOne; Title.TextSize = 20
-Title.TextColor3 = Color3.fromRGB(170,200,230); Title.Size = UDim2.new(0,260,0,36); Title.Position = UDim2.new(0,28,0,12)
-Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Left
-
--- Search box for filtering menu items
-local MenuSearch = Instance.new("TextBox", Frame)
-MenuSearch.Size = UDim2.new(0, 240, 0, 28)
-MenuSearch.Position = UDim2.new(1, -260, 0, 12)
-MenuSearch.BackgroundColor3 = Color3.fromRGB(18,20,24)
-MenuSearch.TextColor3 = Color3.fromRGB(200,220,240)
-MenuSearch.PlaceholderText = "Pesquisar opções..."
-MenuSearch.ClearTextOnFocus = false
-local menuSearchCorner = Instance.new("UICorner", MenuSearch); menuSearchCorner.CornerRadius = UDim.new(0,8)
-
--- Tabs area
-local TabsFrame = Instance.new("Frame", Frame)
-TabsFrame.Size = UDim2.new(1, -56, 0, 44)
-TabsFrame.Position = UDim2.new(0,28,0,56)
-TabsFrame.BackgroundTransparency = 1
-
-local function makeTab(name, xpos)
-    local t = Instance.new("TextButton", TabsFrame)
-    t.Size = UDim2.new(0, 140, 0, 36)
-    t.Position = UDim2.new(0, xpos, 0, 4)
-    t.Text = name
-    t.Font = Enum.Font.GothamSemibold
-    t.TextSize = 14
-    t.TextColor3 = Color3.fromRGB(200,220,240)
-    t.BackgroundColor3 = Color3.fromRGB(18,20,24)
-    t.AutoButtonColor = false
-    local c = Instance.new("UICorner", t); c.CornerRadius = UDim.new(0,10)
-    return t
-end
-
-local TabVisuais = makeTab("Visuais", 0)
-local TabTextures = makeTab("Textures", 154)
-local TabTimers = makeTab("Timers", 308)
-
--- Content area (where category frames live)
-local Content = Instance.new("Frame", Frame)
-Content.Size = UDim2.new(1, -56, 1, -116)
-Content.Position = UDim2.new(0,28,0,106)
-Content.BackgroundTransparency = 1
-
--- category frames (each will host buttons via UIListLayout)
-local function makeCategoryFrame(name)
-    local f = Instance.new("Frame", Content)
-    f.Name = "Category_"..name
-    f.Size = UDim2.new(1,0,1,0)
-    f.BackgroundTransparency = 1
-    local layout = Instance.new("UIListLayout", f)
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0,12)
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    f:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        -- nothing now, but placeholder
-    end)
-    return f, layout
-end
-
-local VisuaisFrame, VisuaisLayout = makeCategoryFrame("Visuais")
-local TexturesFrame, TexturesLayout = makeCategoryFrame("Textures")
-local TimersFrame, TimersLayout = makeCategoryFrame("Timers")
-
--- util: show category
-local currentCategory = nil
-local function showCategory(catName)
-    VisuaisFrame.Visible = (catName == "Visuais")
-    TexturesFrame.Visible = (catName == "Textures")
-    TimersFrame.Visible = (catName == "Timers")
-    -- tab visual feedback
-    local activeColor = Color3.fromRGB(49,157,255)
-    local inactive = Color3.fromRGB(18,20,24)
-    TabVisuais.BackgroundColor3 = (catName=="Visuais" and activeColor or inactive)
-    TabTextures.BackgroundColor3 = (catName=="Textures" and activeColor or inactive)
-    TabTimers.BackgroundColor3 = (catName=="Timers" and activeColor or inactive)
-    currentCategory = catName
-end
-
-TabVisuais.MouseButton1Click:Connect(function() showCategory("Visuais") end)
-TabTextures.MouseButton1Click:Connect(function() showCategory("Textures") end)
-TabTimers.MouseButton1Click:Connect(function() showCategory("Timers") end)
-
--- button creator that supports custom parent (returns button, indicator, labelRef)
-local function createFuturisticButton(txt, parentContainer, width, height, order, c1, c2)
-    parentContainer = parentContainer or Frame
-    width = width or 220; height = height or 52
-    local btnOuter = Instance.new("TextButton", parentContainer)
-    btnOuter.Name = "FuturBtn_"..txt:gsub("%s+","_")
-    btnOuter.BackgroundTransparency = 1
-    btnOuter.BorderSizePixel = 0
-    btnOuter.AutoButtonColor = false
-    btnOuter.Size = UDim2.new(0, width, 0, height)
-    if order then btnOuter.LayoutOrder = order end
-    btnOuter.Text = ""
-    btnOuter.ClipsDescendants = true
-
-    local bg = Instance.new("Frame", btnOuter); bg.Name = "BG"; bg.Size = UDim2.new(1,0,1,0); bg.BackgroundColor3 = c1 or Color3.fromRGB(20,20,20); bg.BorderSizePixel = 0
-    local corner = Instance.new("UICorner", bg); corner.CornerRadius = UDim.new(0,12)
-    local grad = Instance.new("UIGradient", bg); grad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0,c1 or bg.BackgroundColor3), ColorSequenceKeypoint.new(0.6,c2 or bg.BackgroundColor3), ColorSequenceKeypoint.new(1,c1 or bg.BackgroundColor3)}; grad.Rotation=45
-
-    local inner = Instance.new("Frame", bg); inner.Name="Inner"; inner.Size=UDim2.new(1,-8,1,-10); inner.Position=UDim2.new(0,4,0,5)
-    inner.BackgroundColor3 = Color3.fromRGB(12,14,18); inner.BorderSizePixel = 0
-    local innerCorner = Instance.new("UICorner", inner); innerCorner.CornerRadius = UDim.new(0,10)
-    local innerStroke = Instance.new("UIStroke", inner); innerStroke.Color = Color3.fromRGB(28,36,46); innerStroke.Thickness=1; innerStroke.Transparency=0.2
-
-    local shine = Instance.new("Frame", inner); shine.Size = UDim2.new(1,0,0.28,0); shine.BackgroundTransparency = 0.9; shine.BackgroundColor3 = Color3.fromRGB(30,45,60)
-    local shineCorner = Instance.new("UICorner", shine); shineCorner.CornerRadius = UDim.new(0,10)
-
-    local label = Instance.new("TextLabel", inner)
-    label.Size = UDim2.new(1, -24, 1, -4); label.Position = UDim2.new(0,12,0,2)
-    label.BackgroundTransparency = 1; label.Font = Enum.Font.GothamSemibold; label.Text = txt
-    label.TextSize = 15; label.TextColor3 = Color3.fromRGB(170,195,215); label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local indicator = Instance.new("Frame", inner); indicator.Size = UDim2.new(0,50,0,26); indicator.Position = UDim2.new(1,-64,0.5,-13)
-    indicator.BackgroundColor3 = Color3.fromRGB(10,12,14); indicator.BorderSizePixel = 0
-    local indCorner = Instance.new("UICorner", indicator); indCorner.CornerRadius = UDim.new(0,10)
-    local indBar = Instance.new("Frame", indicator); indBar.Size = UDim2.new(0.38,0,0.5,0); indBar.Position = UDim2.new(0.06,0,0.25,0)
-    indBar.BackgroundColor3 = Color3.fromRGB(90,160,220); local indCorner2 = Instance.new("UICorner", indBar); indCorner2.CornerRadius = UDim.new(0,8)
-
-    -- hover/click animations
-    local hoverTweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    btnOuter.MouseEnter:Connect(function()
-        pcall(function()
-            TweenService:Create(grad, hoverTweenInfo, {Rotation = 135}):Play()
-            TweenService:Create(indBar, hoverTweenInfo, {Size = UDim2.new(0.66,0,0.66,0), Position = UDim2.new(0.16,0,0.17,0)}):Play()
-            TweenService:Create(label, hoverTweenInfo, {TextColor3 = Color3.fromRGB(220,235,245)}):Play()
-        end)
-    end)
-    btnOuter.MouseLeave:Connect(function()
-        pcall(function()
-            TweenService:Create(grad, hoverTweenInfo, {Rotation = 45}):Play()
-            TweenService:Create(indBar, hoverTweenInfo, {Size = UDim2.new(0.38,0,0.5,0), Position = UDim2.new(0.06,0,0.25,0)}):Play()
-            TweenService:Create(label, hoverTweenInfo, {TextColor3 = Color3.fromRGB(170,195,215)}):Play()
-        end)
-    end)
-    btnOuter.MouseButton1Down:Connect(function() pcall(function() TweenService:Create(inner, TweenInfo.new(0.09), {Position = UDim2.new(0,6,0,6)}):Play() end) end)
-    btnOuter.MouseButton1Up:Connect(function() pcall(function() TweenService:Create(inner, TweenInfo.new(0.12), {Position = UDim2.new(0,4,0,5)}):Play() end) end)
-
-    -- store label for menu search filtering
-    buttonLabelMap[btnOuter] = label
-
-    return btnOuter, indBar, label
-end
-
--- =============================================================================
--- (All original logic kept unchanged below; only UI layout/labels moved)
--- =============================================================================
-
--- ========== PLAYER ESP ==========
+-- PLAYER ESP
 local PlayerESPActive = false
 local playerHighlights = {}
 local NameTags = {}
-
-local function isBeast(player)
-    return player.Character and player.Character:FindFirstChild("BeastPowers") ~= nil
-end
+local function isBeast(player) return player.Character and player.Character:FindFirstChild("BeastPowers") ~= nil end
 local function HighlightColorForPlayer(player)
     if isBeast(player) then return Color3.fromRGB(240,28,80), Color3.fromRGB(255,188,188) end
     return Color3.fromRGB(52,215,101), Color3.fromRGB(170,255,200)
@@ -284,7 +45,7 @@ end
 local function AddPlayerHighlight(player)
     if player == LocalPlayer then return end
     if not player.Character then return end
-    if playerHighlights[player] then playerHighlights[player]:Destroy(); playerHighlights[player]=nil end
+    if playerHighlights[player] then playerHighlights[player]:Destroy() end
     local fill, outline = HighlightColorForPlayer(player)
     local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_PlayerAura_DAVID]"; h.Adornee = player.Character
@@ -293,12 +54,12 @@ local function AddPlayerHighlight(player)
     h.Enabled = true
     playerHighlights[player] = h
 end
-local function RemovePlayerHighlight(player) if playerHighlights[player] then pcall(function() playerHighlights[player]:Destroy() end); playerHighlights[player]=nil end end
+local function RemovePlayerHighlight(player) if playerHighlights[player] then pcall(function() playerHighlights[player]:Destroy() end) end playerHighlights[player]=nil end
 
 local function AddNameTag(player)
     if player==LocalPlayer then return end
     if not player.Character or not player.Character:FindFirstChild("Head") then return end
-    if NameTags[player] then NameTags[player]:Destroy(); NameTags[player]=nil end
+    if NameTags[player] then NameTags[player]:Destroy() end
     local billboard = Instance.new("BillboardGui", GUI)
     billboard.Name = "[FTFName]"; billboard.Adornee = player.Character.Head
     billboard.Size = UDim2.new(0,110,0,20); billboard.StudsOffset = Vector3.new(0,2.18,0); billboard.AlwaysOnTop = true
@@ -308,19 +69,15 @@ local function AddNameTag(player)
     text.Text = player.DisplayName or player.Name
     NameTags[player] = billboard
 end
-local function RemoveNameTag(player) if NameTags[player] then pcall(function() NameTags[player]:Destroy() end); NameTags[player]=nil end end
+local function RemoveNameTag(player) if NameTags[player] then pcall(function() NameTags[player]:Destroy() end) end NameTags[player]=nil end
 
 local function RefreshPlayerESP()
     for _,p in pairs(Players:GetPlayers()) do
         if PlayerESPActive then AddPlayerHighlight(p); AddNameTag(p) else RemovePlayerHighlight(p); RemoveNameTag(p) end
     end
 end
-
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function() wait(0.08); if PlayerESPActive then AddPlayerHighlight(p); AddNameTag(p) end end)
-end)
+Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() wait(0.08); if PlayerESPActive then AddPlayerHighlight(p); AddNameTag(p) end end) end)
 Players.PlayerRemoving:Connect(function(p) RemovePlayerHighlight(p); RemoveNameTag(p) end)
-
 RunService.RenderStepped:Connect(function()
     if PlayerESPActive then
         for _,p in pairs(Players:GetPlayers()) do
@@ -333,7 +90,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ========== COMPUTER ESP ==========
+-- COMPUTER ESP
 local ComputerESPActive = false
 local compHighlights = {}
 local function isComputerModel(model)
@@ -354,7 +111,7 @@ local function getPcColor(model)
 end
 local function AddComputerHighlight(model)
     if not isComputerModel(model) then return end
-    if compHighlights[model] then compHighlights[model]:Destroy(); compHighlights[model]=nil end
+    if compHighlights[model] then compHighlights[model]:Destroy() end
     local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_ComputerAura_DAVID]"; h.Adornee = model
     h.Parent = Workspace
@@ -363,7 +120,7 @@ local function AddComputerHighlight(model)
     h.Enabled = true
     compHighlights[model] = h
 end
-local function RemoveComputerHighlight(model) if compHighlights[model] then pcall(function() compHighlights[model]:Destroy() end); compHighlights[model]=nil end end
+local function RemoveComputerHighlight(model) if compHighlights[model] then pcall(function() compHighlights[model]:Destroy() end) end compHighlights[model]=nil end
 local function RefreshComputerESP()
     for m,h in pairs(compHighlights) do if h then h:Destroy() end end; compHighlights = {}
     if not ComputerESPActive then return end
@@ -373,109 +130,67 @@ Workspace.DescendantAdded:Connect(function(obj) if ComputerESPActive and isCompu
 Workspace.DescendantRemoving:Connect(RemoveComputerHighlight)
 RunService.RenderStepped:Connect(function() if ComputerESPActive then for m,h in pairs(compHighlights) do if m and m.Parent and h and h.Parent then h.FillColor = getPcColor(m) end end end end)
 
--- ========== ESP DOORS (BORDAS FINAS AMARELAS) ==========
+-- DOOR ESP (SelectionBox amarelas)
 local DoorESPActive = false
-local doorHighlights = {} -- model => SelectionBox
-local doorDescendantAddConn = nil
-local doorDescendantRemConn = nil
-
+local doorHighlights = {}
+local doorDescendantAddConn, doorDescendantRemConn = nil, nil
 local function isDoorModel(model)
     if not model or not model:IsA("Model") then return false end
     local name = model.Name:lower()
-    -- detecta portas por nome (flexível)
     if name:find("door") then return true end
     if name:find("exitdoor") then return true end
     if name:find("single") and name:find("door") then return true end
     if name:find("double") and name:find("door") then return true end
     return false
 end
-
 local function getDoorPrimaryPart(model)
     if not model then return nil end
-    -- procure por DoorBoard, Part, ExitDoorTrigger, Door etc.
     local candidates = {"DoorBoard","Door", "Part", "ExitDoorTrigger", "DoorL", "DoorR", "BasePart"}
     for _,n in ipairs(candidates) do
         local v = model:FindFirstChild(n, true)
         if v and v:IsA("BasePart") then return v end
     end
-    -- fallback: maior BasePart do modelo
     local biggest
     for _,c in ipairs(model:GetDescendants()) do
-        if c:IsA("BasePart") then
-            if not biggest or c.Size.Magnitude > biggest.Size.Magnitude then biggest = c end
-        end
+        if c:IsA("BasePart") and (not biggest or c.Size.Magnitude > biggest.Size.Magnitude) then biggest = c end
     end
     return biggest
 end
-
 local function AddDoorHighlight(model)
     if not model or not isDoorModel(model) then return end
-    -- já existe: remover primeiro (substituição segura)
-    if doorHighlights[model] then
-        pcall(function() doorHighlights[model]:Destroy() end)
-        doorHighlights[model] = nil
-    end
+    if doorHighlights[model] then doorHighlights[model]:Destroy() end
     local primary = getDoorPrimaryPart(model)
     if not primary then return end
     local box = Instance.new("SelectionBox")
-    box.Name = "[FTF_ESP_DoorEdge_DAVID]"
-    box.Adornee = primary
-    -- cor amarela suave
+    box.Name = "[FTF_ESP_DoorEdge_DAVID]"; box.Adornee = primary
     pcall(function() box.Color3 = Color3.fromRGB(255,230,120) end)
-    pcall(function() box.Color = Color3.fromRGB(255,230,120) end) -- em caso de propriedades diferentes
-    -- linha fina e sutil
-    if pcall(function() box.LineThickness = 0.01 end) then end
-    if pcall(function() box.SurfaceTransparency = 1 end) then end
+    pcall(function() box.Color = Color3.fromRGB(255,230,120) end)
+    pcall(function() box.LineThickness = 0.01 end)
     box.Parent = Workspace
     doorHighlights[model] = box
 end
-
-local function RemoveDoorHighlight(model)
-    if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end); doorHighlights[model] = nil end
-end
-
+local function RemoveDoorHighlight(model) if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end) end doorHighlights[model]=nil end
 local function RefreshDoorESP()
     for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end
     if not DoorESPActive then return end
-    for _,d in ipairs(Workspace:GetDescendants()) do
-        if isDoorModel(d) then
-            -- se for model, adicione borda na peça principal
-            AddDoorHighlight(d)
-        end
-    end
+    for _,d in ipairs(Workspace:GetDescendants()) do if isDoorModel(d) then AddDoorHighlight(d) end end
 end
-
 local function onDoorDescendantAdded(desc)
     if not DoorESPActive then return end
     if not desc then return end
-    if desc:IsA("Model") and isDoorModel(desc) then
-        task.delay(0.04, function() AddDoorHighlight(desc) end)
-    elseif desc:IsA("BasePart") then
-        local mdl = desc:FindFirstAncestorWhichIsA("Model")
-        if mdl and isDoorModel(mdl) then
-            task.delay(0.04, function() AddDoorHighlight(mdl) end)
-        end
-    end
+    if desc:IsA("Model") and isDoorModel(desc) then task.delay(0.04, function() AddDoorHighlight(desc) end)
+    elseif desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isDoorModel(mdl) then task.delay(0.04, function() AddDoorHighlight(mdl) end) end end
 end
-
 local function onDoorDescendantRemoving(desc)
     if not desc then return end
-    if desc:IsA("Model") and isDoorModel(desc) then
-        RemoveDoorHighlight(desc)
-    elseif desc:IsA("BasePart") then
-        local mdl = desc:FindFirstAncestorWhichIsA("Model")
-        if mdl and isDoorModel(mdl) then
-            RemoveDoorHighlight(mdl)
-        end
-    end
+    if desc:IsA("Model") and isDoorModel(desc) then RemoveDoorHighlight(desc)
+    elseif desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isDoorModel(mdl) then RemoveDoorHighlight(mdl) end end
 end
 
--- ========== FREEZE PODS AURA (mantido) ==========
+-- FREEZE PODS
 local FreezePodsActive = false
 local podHighlights = {}
-local podDescendantAddConn = nil
-local podDescendantRemConn = nil
-
+local podDescendantAddConn, podDescendantRemConn = nil, nil
 local function isFreezePodModel(model)
     if not model or not model:IsA("Model") then return false end
     local name = model.Name:lower()
@@ -484,54 +199,31 @@ local function isFreezePodModel(model)
     if name:find("freeze") and name:find("capsule") then return true end
     return false
 end
-
 local function AddFreezePodHighlight(model)
     if not model or not isFreezePodModel(model) then return end
-    if podHighlights[model] then pcall(function() podHighlights[model]:Destroy() end); podHighlights[model]=nil end
-    local h = Instance.new("Highlight")
-    h.Name = "[FTF_ESP_FreezePodAura_DAVID]"
-    h.Adornee = model
-    h.Parent = Workspace
-    h.FillColor = Color3.fromRGB(255,100,100)    -- vermelho
-    h.OutlineColor = Color3.fromRGB(200,40,40)
-    h.FillTransparency = 0.08
-    h.OutlineTransparency = 0.02
-    h.Enabled = true
+    if podHighlights[model] then podHighlights[model]:Destroy() end
+    local h = Instance.new("Highlight"); h.Name = "[FTF_ESP_FreezePodAura_DAVID]"; h.Adornee = model; h.Parent = Workspace
+    h.FillColor = Color3.fromRGB(255,100,100); h.OutlineColor = Color3.fromRGB(200,40,40)
+    h.FillTransparency = 0.08; h.OutlineTransparency = 0.02; h.Enabled = true
     podHighlights[model] = h
 end
-
-local function RemoveFreezePodHighlight(model)
-    if podHighlights[model] then pcall(function() podHighlights[model]:Destroy() end); podHighlights[model]=nil end
-end
-
+local function RemoveFreezePodHighlight(model) if podHighlights[model] then pcall(function() podHighlights[model]:Destroy() end) end podHighlights[model]=nil end
 local function RefreshFreezePods()
     for m,_ in pairs(podHighlights) do RemoveFreezePodHighlight(m) end
     if not FreezePodsActive then return end
-    for _,d in ipairs(Workspace:GetDescendants()) do
-        if isFreezePodModel(d) then AddFreezePodHighlight(d) end
-    end
+    for _,d in ipairs(Workspace:GetDescendants()) do if isFreezePodModel(d) then AddFreezePodHighlight(d) end end
 end
-
 local function onPodDescendantAdded(desc)
     if not FreezePodsActive then return end
-    if desc and (desc:IsA("Model") or desc:IsA("Folder")) and isFreezePodModel(desc) then
-        task.delay(0.05, function() AddFreezePodHighlight(desc) end)
-    elseif desc and desc:IsA("BasePart") then
-        local mdl = desc:FindFirstAncestorWhichIsA("Model")
-        if mdl and isFreezePodModel(mdl) then task.delay(0.05, function() AddFreezePodHighlight(mdl) end) end
-    end
+    if desc and (desc:IsA("Model") or desc:IsA("Folder")) and isFreezePodModel(desc) then task.delay(0.05, function() AddFreezePodHighlight(desc) end)
+    elseif desc and desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isFreezePodModel(mdl) then task.delay(0.05, function() AddFreezePodHighlight(mdl) end) end end
 end
-
 local function onPodDescendantRemoving(desc)
-    if desc and desc:IsA("Model") and isFreezePodModel(desc) then
-        RemoveFreezePodHighlight(desc)
-    elseif desc and desc:IsA("BasePart") then
-        local mdl = desc:FindFirstAncestorWhichIsA("Model")
-        if mdl and isFreezePodModel(mdl) then RemoveFreezePodHighlight(mdl) end
-    end
+    if desc and desc:IsA("Model") and isFreezePodModel(desc) then RemoveFreezePodHighlight(desc)
+    elseif desc and desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isFreezePodModel(mdl) then RemoveFreezePodHighlight(mdl) end end
 end
 
--- ========== RAGDOLL DOWN TIMER (28s) ==========
+-- DOWN TIMER
 local DownTimerActive = false
 local DOWN_TIME = 28
 local ragdollBillboards = {}
@@ -585,9 +277,8 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
 local function attachRagdollListenerToPlayer(player)
-    if ragdollConnects[player] then pcall(function() ragdollConnects[player]:Disconnect() end); ragdollConnects[player] = nil end
+    if ragdollConnects[player] then pcall(function() ragdollConnects[player]:Disconnect() end) end
     task.spawn(function()
         local ok, tempStats = pcall(function() return player:WaitForChild("TempPlayerStatsModule", 8) end)
         if not ok or not tempStats then return end
@@ -601,11 +292,10 @@ end
 Players.PlayerAdded:Connect(function(p) attachRagdollListenerToPlayer(p); p.CharacterAdded:Connect(function() wait(0.06); if ragdollBillboards[p] then removeRagdollBillboard(p); createRagdollBillboardFor(p) end end) end)
 for _,p in pairs(Players:GetPlayers()) do attachRagdollListenerToPlayer(p) end
 
--- ========== GRAY SKIN (Remove players Textures) ==========
+-- GRAY SKIN ("Remove players Textures")
 local GraySkinActive = false
 local skinBackup = {}
 local grayConns = {}
-
 local function storePartOriginal(part, store)
     if not part or (not part:IsA("BasePart") and not part:IsA("MeshPart")) then return end
     if store[part] then return end
@@ -659,20 +349,16 @@ local function disableGraySkin()
 end
 Players.PlayerRemoving:Connect(function(p) if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p]=nil end; if grayConns[p] then pcall(function() grayConns[p]:Disconnect() end); grayConns[p]=nil end end)
 
--- ========== SAFE WHITE BRICK TEXTURE (toggle) ==========
+-- TEXTURE (white bricks)
 local TextureActive = false
-local textureBackup = {}         -- [part] = {Color, Material}
+local textureBackup = {}
 local textureDescendantConn = nil
-
 local function isPartPlayerCharacter(part)
     if not part then return false end
     local model = part:FindFirstAncestorWhichIsA("Model")
-    if model then
-        return Players:GetPlayerFromCharacter(model) ~= nil
-    end
+    if model then return Players:GetPlayerFromCharacter(model) ~= nil end
     return false
 end
-
 local function saveAndApplyWhiteBrick(part)
     if not part or not part:IsA("BasePart") then return end
     if isPartPlayerCharacter(part) then return end
@@ -682,7 +368,6 @@ local function saveAndApplyWhiteBrick(part)
     textureBackup[part] = { Color = (okC and col) or nil, Material = (okM and mat) or nil }
     pcall(function() part.Material = Enum.Material.Brick; part.Color = Color3.fromRGB(255,255,255) end)
 end
-
 local function applyWhiteBrickToAll()
     local desc = Workspace:GetDescendants()
     local batch = 0
@@ -695,14 +380,10 @@ local function applyWhiteBrickToAll()
         end
     end
 end
-
 local function onWorkspaceDescendantAdded(desc)
     if not TextureActive then return end
-    if desc and desc:IsA("BasePart") and not isPartPlayerCharacter(desc) then
-        task.defer(function() saveAndApplyWhiteBrick(desc) end)
-    end
+    if desc and desc:IsA("BasePart") and not isPartPlayerCharacter(desc) then task.defer(function() saveAndApplyWhiteBrick(desc) end) end
 end
-
 local function restoreTextures()
     local entries = {}
     for p, props in pairs(textureBackup) do entries[#entries+1] = {p=p, props=props} end
@@ -720,274 +401,309 @@ local function restoreTextures()
     end
     textureBackup = {}
 end
-
 local function enableTextureToggle()
     if TextureActive then return end
     TextureActive = true
-    TextureIndicator.BackgroundColor3 = Color3.fromRGB(245,245,245)
-    TweenService:Create(TextureIndicator, TweenInfo.new(0.18), {Size = UDim2.new(0.78,0,0.72,0), Position = UDim2.new(0.11,0,0.14,0)}):Play()
-    setmetatable({}, {__mode = "k"}) -- harmless placeholder
     task.spawn(applyWhiteBrickToAll)
     textureDescendantConn = Workspace.DescendantAdded:Connect(onWorkspaceDescendantAdded)
-    -- update visible label
-    if buttonLabelMap[TextureBtn] then buttonLabelMap[TextureBtn].Text = "Desativar Textures Tijolos Brancos" end
 end
-
 local function disableTextureToggle()
     if not TextureActive then return end
     TextureActive = false
     if textureDescendantConn then pcall(function() textureDescendantConn:Disconnect() end); textureDescendantConn = nil end
     task.spawn(restoreTextures)
-    TextureIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
-    TweenService:Create(TextureIndicator, TweenInfo.new(0.22), {Size = UDim2.new(0.38,0,0.5,0), Position = UDim2.new(0.06,0,0.25,0)}):Play()
-    if buttonLabelMap[TextureBtn] then buttonLabelMap[TextureBtn].Text = "Ativar Textures Tijolos Brancos" end
 end
 
--- ========== TELEPORT GUI (NEW) ==========
--- Creates a modal teleport window with a scrollable list of players (updates on join/leave).
-local TeleportGui = Instance.new("Frame", GUI)
-TeleportGui.Name = "FTF_Teleport_Window"
-TeleportGui.Size = UDim2.new(0, 320, 0, 420)
-TeleportGui.Position = UDim2.new(0.5, 200, 0.15, 0) -- sits to the right of main menu
-TeleportGui.BackgroundColor3 = Color3.fromRGB(12,14,18)
-TeleportGui.BorderSizePixel = 0
-TeleportGui.Visible = false
-local tpCorner = Instance.new("UICorner", TeleportGui); tpCorner.CornerRadius = UDim.new(0,12)
-local tpTitle = Instance.new("TextLabel", TeleportGui)
-tpTitle.Size = UDim2.new(1, -24, 0, 32); tpTitle.Position = UDim2.new(0, 12, 0, 12)
-tpTitle.BackgroundTransparency = 1; tpTitle.Font = Enum.Font.GothamBold; tpTitle.TextSize = 16
-tpTitle.TextColor3 = Color3.fromRGB(200,220,240); tpTitle.Text = "Teleporte - Jogadores"; tpTitle.TextXAlignment = Enum.TextXAlignment.Left
+-- =====================================================================
+-- UI: organized menu like image — top horizontal rounded frame with tabs
+-- =====================================================================
 
-local tpClose = Instance.new("TextButton", TeleportGui)
-tpClose.Size = UDim2.new(0, 28, 0, 28); tpClose.Position = UDim2.new(1, -40, 0, 8)
-tpClose.BackgroundTransparency = 1; tpClose.Text = "✕"; tpClose.Font = Enum.Font.GothamBlack; tpClose.TextColor3 = Color3.fromRGB(180,200,220)
-tpClose.MouseButton1Click:Connect(function() TeleportGui.Visible = false end)
+-- Dimensions
+local MENU_WIDTH = 420
+local MENU_HEIGHT = 360
 
--- Close-on-teleport toggle
-local CloseOnTeleport = true
-local tpCloseToggle = Instance.new("TextButton", TeleportGui)
-tpCloseToggle.Size = UDim2.new(0, 140, 0, 24)
-tpCloseToggle.Position = UDim2.new(1, -164, 0, 12)
-tpCloseToggle.BackgroundColor3 = Color3.fromRGB(18,20,24)
-tpCloseToggle.TextColor3 = Color3.fromRGB(200,220,240)
-tpCloseToggle.Font = Enum.Font.GothamSemibold
-tpCloseToggle.TextSize = 14
-tpCloseToggle.Text = "Fechar ao Teleportar: ON"
-local tpCloseToggleCorner = Instance.new("UICorner", tpCloseToggle); tpCloseToggleCorner.CornerRadius = UDim.new(0,8)
-tpCloseToggle.MouseButton1Click:Connect(function()
-    CloseOnTeleport = not CloseOnTeleport
-    tpCloseToggle.Text = "Fechar ao Teleportar: " .. (CloseOnTeleport and "ON" or "OFF")
+local MainFrame = Instance.new("Frame", GUI)
+MainFrame.Name = "FTF_Main"
+MainFrame.Size = UDim2.new(0, MENU_WIDTH, 0, MENU_HEIGHT)
+MainFrame.Position = UDim2.new(0.5, -MENU_WIDTH/2, 0.08, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18,18,18)
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+local mfCorner = Instance.new("UICorner", MainFrame); mfCorner.CornerRadius = UDim.new(0,12)
+
+-- Title bar
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Size = UDim2.new(1, 0, 0, 48)
+TitleBar.Position = UDim2.new(0,0,0,0)
+TitleBar.BackgroundTransparency = 1
+
+local TitleLbl = Instance.new("TextLabel", TitleBar)
+TitleLbl.Text = "FTF - David's ESP"
+TitleLbl.Font = Enum.Font.GothamBold
+TitleLbl.TextSize = 16
+TitleLbl.TextColor3 = Color3.fromRGB(220,220,220)
+TitleLbl.BackgroundTransparency = 1
+TitleLbl.Position = UDim2.new(0,12,0,12)
+TitleLbl.Size = UDim2.new(0,220,0,24)
+TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Search box
+local SearchBox = Instance.new("TextBox", TitleBar)
+SearchBox.Size = UDim2.new(0, 180, 0, 28)
+SearchBox.Position = UDim2.new(1, -188, 0, 10)
+SearchBox.BackgroundColor3 = Color3.fromRGB(26,26,26)
+SearchBox.TextColor3 = Color3.fromRGB(200,200,200)
+SearchBox.PlaceholderText = "Pesquisar..."
+SearchBox.ClearTextOnFocus = false
+local sbCorner = Instance.new("UICorner", SearchBox); sbCorner.CornerRadius = UDim.new(0,8)
+local sbPadding = Instance.new("UIPadding", SearchBox); sbPadding.PaddingLeft = UDim.new(0,10)
+
+-- Close button
+local CloseBtn = Instance.new("TextButton", TitleBar)
+CloseBtn.Text = "✕"; CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 18
+CloseBtn.BackgroundTransparency = 1; CloseBtn.Size = UDim2.new(0,36,0,36); CloseBtn.Position = UDim2.new(1,-44,0,6)
+CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
+CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
+
+-- Tabs (pills)
+local TabsParent = Instance.new("Frame", MainFrame)
+TabsParent.Size = UDim2.new(1, -24, 0, 44)
+TabsParent.Position = UDim2.new(0,12,0,56)
+TabsParent.BackgroundTransparency = 1
+
+local function createTab(name, x)
+    local t = Instance.new("TextButton", TabsParent)
+    t.Size = UDim2.new(0, 120, 0, 34)
+    t.Position = UDim2.new(0, x, 0, 4)
+    t.Text = name
+    t.Font = Enum.Font.GothamSemibold
+    t.TextSize = 14
+    t.TextColor3 = Color3.fromRGB(200,200,200)
+    t.BackgroundColor3 = Color3.fromRGB(28,28,28)
+    t.AutoButtonColor = false
+    local c = Instance.new("UICorner", t); c.CornerRadius = UDim.new(0,12)
+    return t
+end
+
+local TabESP = createTab("ESP", 0)
+local TabTextures = createTab("Textures", 132)
+local TabTimers = createTab("Timers", 264)
+
+-- Content ScrollingFrame
+local ContentScroll = Instance.new("ScrollingFrame", MainFrame)
+ContentScroll.Name = "ContentScroll"
+ContentScroll.Size = UDim2.new(1, -24, 1, -120)
+ContentScroll.Position = UDim2.new(0,12,0,112)
+ContentScroll.BackgroundTransparency = 1
+ContentScroll.BorderSizePixel = 0
+ContentScroll.ScrollBarImageColor3 = Color3.fromRGB(75,75,75)
+ContentScroll.ScrollBarThickness = 8
+local contentLayout = Instance.new("UIListLayout", ContentScroll)
+contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+contentLayout.Padding = UDim.new(0,10)
+contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- update canvas size when content changes
+contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ContentScroll.CanvasSize = UDim2.new(0,0,0, contentLayout.AbsoluteContentSize.Y + 18)
 end)
 
-local tpScroll = Instance.new("ScrollingFrame", TeleportGui)
-tpScroll.Size = UDim2.new(1, -24, 1, -68); tpScroll.Position = UDim2.new(0, 12, 0, 48)
-tpScroll.BackgroundTransparency = 1; tpScroll.BorderSizePixel = 0; tpScroll.ScrollBarThickness = 8
-local tpLayout = Instance.new("UIListLayout", tpScroll); tpLayout.SortOrder = Enum.SortOrder.LayoutOrder; tpLayout.Padding = UDim.new(0, 8)
+-- toggle component creator (single line item with label and switch)
+local function createToggleItem(parent, labelText, initial, callback)
+    local item = Instance.new("Frame", parent)
+    item.Size = UDim2.new(0.95, 0, 0, 44)
+    item.BackgroundColor3 = Color3.fromRGB(28,28,28)
+    item.BorderSizePixel = 0
+    local itemCorner = Instance.new("UICorner", item); itemCorner.CornerRadius = UDim.new(0,10)
 
-local TeleportButtons = {} -- player -> button
+    -- label
+    local lbl = Instance.new("TextLabel", item)
+    lbl.Size = UDim2.new(1, -120, 1, 0)
+    lbl.Position = UDim2.new(0,12,0,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(210,210,210)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = labelText
 
-local function clearTeleportButtons()
-    for pl, btn in pairs(TeleportButtons) do
-        if btn and btn.Parent then btn:Destroy() end
-        TeleportButtons[pl] = nil
+    -- switch container
+    local sw = Instance.new("TextButton", item)
+    sw.Size = UDim2.new(0,88,0,28)
+    sw.Position = UDim2.new(1, -100, 0.5, -14)
+    sw.BackgroundColor3 = Color3.fromRGB(38,38,38)
+    sw.AutoButtonColor = false
+    local swCorner = Instance.new("UICorner", sw); swCorner.CornerRadius = UDim.new(0,16)
+
+    local swBg = Instance.new("Frame", sw)
+    swBg.Size = UDim2.new(1, -8, 1, -8)
+    swBg.Position = UDim2.new(0,4,0,4)
+    swBg.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    local swBgCorner = Instance.new("UICorner", swBg); swBgCorner.CornerRadius = UDim.new(0,14)
+
+    local toggleDot = Instance.new("Frame", swBg)
+    toggleDot.Size = UDim2.new(0,20,0,20)
+    toggleDot.Position = UDim2.new(initial and 1 or 0, -22, 0.5, -10)
+    toggleDot.BackgroundColor3 = initial and Color3.fromRGB(120,200,120) or Color3.fromRGB(180,180,180)
+    local dotCorner = Instance.new("UICorner", toggleDot); dotCorner.CornerRadius = UDim.new(0,10)
+
+    -- state
+    local state = initial or false
+
+    local function updateVisual(s)
+        state = s
+        -- animate dot and change color
+        local targetPos = (s) and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+        TweenService:Create(toggleDot, TweenInfo.new(0.15), {Position = targetPos}):Play()
+        toggleDot.BackgroundColor3 = s and Color3.fromRGB(120,200,120) or Color3.fromRGB(160,160,160)
+        swBg.BackgroundColor3 = s and Color3.fromRGB(35,90,35) or Color3.fromRGB(60,60,60)
+    end
+
+    sw.MouseButton1Click:Connect(function()
+        updateVisual(not state)
+        pcall(function() callback(state) end) -- pass old state (callback can toggle global)
+    end)
+
+    -- initial visual
+    updateVisual(state)
+
+    return item, function(newState) updateVisual(newState) end, function() return state end
+end
+
+-- Category definitions (mapping label => handler)
+local Categories = {
+    ["ESP"] = {
+        { label = "ESP Players",      get = function() return PlayerESPActive end,    toggle = function(_) PlayerESPActive = not PlayerESPActive; RefreshPlayerESP(); end },
+        { label = "ESP PCs",          get = function() return ComputerESPActive end, toggle = function(_) ComputerESPActive = not ComputerESPActive; RefreshComputerESP(); end },
+        { label = "ESP Freeze Pods",  get = function() return FreezePodsActive end,   toggle = function(_) FreezePodsActive = not FreezePodsActive; RefreshFreezePods(); end },
+        { label = "ESP Exit Doors",   get = function() return DoorESPActive end,     toggle = function(_) DoorESPActive = not DoorESPActive; if DoorESPActive then RefreshDoorESP(); if not doorDescendantAddConn then doorDescendantAddConn = Workspace.DescendantAdded:Connect(onDoorDescendantAdded) end; if not doorDescendantRemConn then doorDescendantRemConn = Workspace.DescendantRemoving:Connect(onDoorDescendantRemoving) end else for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end; if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn=nil end; if doorDescendantRemConn then pcall(function() doorDescendantRemConn:Disconnect() end); doorDescendantRemConn=nil end end end },
+    },
+    ["Textures"] = {
+        { label = "Remove players Textures", get = function() return GraySkinActive end, toggle = function(_) GraySkinActive = not GraySkinActive; if GraySkinActive then enableGraySkin() else disableGraySkin() end end },
+        { label = "Ativar Textures Tijolos Brancos", get = function() return TextureActive end, toggle = function(_) if not TextureActive then enableTextureToggle() else disableTextureToggle() end end },
+    },
+    ["Timers"] = {
+        { label = "Ativar Contador de Down", get = function() return DownTimerActive end, toggle = function(_) DownTimerActive = not DownTimerActive; if not DownTimerActive then for p,_ in pairs(ragdollBillboards) do if ragdollBillboards[p] then removeRagdollBillboard(p) end end; for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end else for _,p in pairs(Players:GetPlayers()) do local ok, temp = pcall(function() return p:FindFirstChild("TempPlayerStatsModule") end); if ok and temp then local rag = temp:FindFirstChild("Ragdoll"); if rag and rag.Value then attachRagdollListenerToPlayer(p); end end end end end },
+    },
+}
+
+-- Build content for current category, with optional filter
+local currentCategory = "ESP"
+local activeToggles = {} -- store upgrade functions to set visual from external toggles
+local function buildCategory(name, filter)
+    filter = (filter or ""):lower()
+    -- clear content
+    for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
+    activeToggles = {}
+    local items = Categories[name] or {}
+    local order = 1
+    for _,entry in ipairs(items) do
+        if filter == "" or entry.label:lower():find(filter) then
+            local state = false
+            pcall(function() state = entry.get() end)
+            local item, setVisual = createToggleItem(ContentScroll, entry.label, state, function(oldState)
+                -- call the toggle handler
+                pcall(function() entry.toggle(oldState) end)
+                -- update visuals to reflect new state
+                local newState = nil
+                pcall(function() newState = entry.get() end)
+                if newState ~= nil then setVisual(newState) end
+            end)
+            item.LayoutOrder = order
+            order = order + 1
+            activeToggles[entry.label] = setVisual
+        end
     end
 end
 
-local function buildTeleportButtons()
-    clearTeleportButtons()
-    for i, pl in ipairs(Players:GetPlayers()) do
+-- Tabs click handlers
+TabESP.MouseButton1Click:Connect(function() currentCategory = "ESP"; buildCategory("ESP", SearchBox.Text) TabESP.BackgroundColor3 = Color3.fromRGB(34,34,34); TabTextures.BackgroundColor3 = Color3.fromRGB(28,28,28); TabTimers.BackgroundColor3 = Color3.fromRGB(28,28,28) end)
+TabTextures.MouseButton1Click:Connect(function() currentCategory = "Textures"; buildCategory("Textures", SearchBox.Text) TabTextures.BackgroundColor3 = Color3.fromRGB(34,34,34); TabESP.BackgroundColor3 = Color3.fromRGB(28,28,28); TabTimers.BackgroundColor3 = Color3.fromRGB(28,28,28) end)
+TabTimers.MouseButton1Click:Connect(function() currentCategory = "Timers"; buildCategory("Timers", SearchBox.Text) TabTimers.BackgroundColor3 = Color3.fromRGB(34,34,34); TabESP.BackgroundColor3 = Color3.fromRGB(28,28,28); TabTextures.BackgroundColor3 = Color3.fromRGB(28,28,28) end)
+
+-- search behavior
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    buildCategory(currentCategory, SearchBox.Text)
+end)
+
+-- initial build
+TabESP.BackgroundColor3 = Color3.fromRGB(34,34,34)
+buildCategory("ESP", "")
+
+-- draggable
+local dragging, dragStart, startPos = false, nil, nil
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Toggle opening with K
+local menuOpen = false
+UIS.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then menuOpen = not menuOpen; MainFrame.Visible = menuOpen end end)
+
+-- TELEPORT GUI (kept simple)
+local TeleportGui = Instance.new("Frame", GUI)
+TeleportGui.Name = "FTF_Teleport_Window"
+TeleportGui.Size = UDim2.new(0, 320, 0, 420)
+TeleportGui.Position = UDim2.new(0.5, MENU_WIDTH/2 + 20, 0.12, 0)
+TeleportGui.BackgroundColor3 = Color3.fromRGB(18,18,18)
+TeleportGui.BorderSizePixel = 0
+TeleportGui.Visible = false
+local tpCorner = Instance.new("UICorner", TeleportGui); tpCorner.CornerRadius = UDim.new(0,12)
+local tpTitle = Instance.new("TextLabel", TeleportGui); tpTitle.Size = UDim2.new(1, -24, 0, 32); tpTitle.Position = UDim2.new(0, 12, 0, 12); tpTitle.BackgroundTransparency = 1; tpTitle.Font = Enum.Font.GothamBold; tpTitle.TextSize = 16; tpTitle.TextColor3 = Color3.fromRGB(200,220,240); tpTitle.Text = "Teleporte - Jogadores"; tpTitle.TextXAlignment = Enum.TextXAlignment.Left
+local tpClose = Instance.new("TextButton", TeleportGui); tpClose.Size = UDim2.new(0, 28, 0, 28); tpClose.Position = UDim2.new(1, -40, 0, 8); tpClose.BackgroundTransparency = 1; tpClose.Text = "✕"; tpClose.Font = Enum.Font.GothamBlack; tpClose.TextColor3 = Color3.fromRGB(180,200,220)
+tpClose.MouseButton1Click:Connect(function() TeleportGui.Visible = false end)
+local tpScroll = Instance.new("ScrollingFrame", TeleportGui); tpScroll.Size = UDim2.new(1, -24, 1, -68); tpScroll.Position = UDim2.new(0, 12, 0, 48); tpScroll.BackgroundTransparency = 1; tpScroll.BorderSizePixel = 0; tpScroll.ScrollBarThickness = 8
+local tpLayout = Instance.new("UIListLayout", tpScroll); tpLayout.SortOrder = Enum.SortOrder.LayoutOrder; tpLayout.Padding = UDim.new(0, 8)
+
+local function rebuildTeleportList()
+    for _,c in pairs(tpScroll:GetChildren()) do if c:IsA("TextButton") or c:IsA("Frame") then c:Destroy() end end
+    local order = 1
+    for _,pl in ipairs(Players:GetPlayers()) do
         if pl ~= LocalPlayer then
             local b = Instance.new("TextButton", tpScroll)
-            b.Name = "TP_Button_" .. pl.Name
-            b.Size = UDim2.new(1, -8, 0, 44)
-            b.BackgroundColor3 = Color3.fromRGB(18,20,24)
-            b.BorderSizePixel = 0
+            b.Size = UDim2.new(1, -8, 0, 40); b.Position = UDim2.new(0, 4, 0, 0)
+            b.BackgroundColor3 = Color3.fromRGB(26,26,26); b.BorderSizePixel = 0
             local bc = Instance.new("UICorner", b); bc.CornerRadius = UDim.new(0,8)
-            local lbl = Instance.new("TextLabel", b)
-            lbl.Size = UDim2.new(1, -12, 1, 0); lbl.Position = UDim2.new(0, 8, 0, 0)
-            lbl.BackgroundTransparency = 1; lbl.Font = Enum.Font.GothamSemibold; lbl.TextSize = 14
-            lbl.TextColor3 = Color3.fromRGB(200,220,240)
-            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            b.LayoutOrder = order; order = order + 1
+            local lbl = Instance.new("TextLabel", b); lbl.BackgroundTransparency = 1; lbl.Size = UDim2.new(1, -10, 1, 0); lbl.Position = UDim2.new(0, 8, 0, 0); lbl.Font = Enum.Font.GothamSemibold; lbl.TextSize = 14; lbl.TextColor3 = Color3.fromRGB(200,200,200)
             lbl.Text = pl.DisplayName .. " (" .. pl.Name .. ")"
-            TeleportButtons[pl] = b
-
             b.MouseButton1Click:Connect(function()
-                -- safe teleport
-                local myChar = LocalPlayer.Character
-                local targetChar = pl.Character
+                local myChar = LocalPlayer.Character; local targetChar = pl.Character
                 if not myChar or not targetChar then return end
                 local hrp = myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Torso") or myChar:FindFirstChild("UpperTorso")
                 local thrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("UpperTorso")
                 if not hrp or not thrp then return end
-                pcall(function() hrp.CFrame = thrp.CFrame + Vector3.new(0, 4, 0) end)
-                -- optional: close teleport window
-                if CloseOnTeleport then TeleportGui.Visible = false end
+                pcall(function() hrp.CFrame = thrp.CFrame + Vector3.new(0,4,0) end)
+                TeleportGui.Visible = false
             end)
         end
     end
-    -- ensure layout updates
-    tpScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(0, tpLayout.AbsoluteContentSize.Y + 12))
 end
+Players.PlayerAdded:Connect(function() task.wait(0.12); rebuildTeleportList() end)
+Players.PlayerRemoving:Connect(function() task.wait(0.12); rebuildTeleportList() end)
+rebuildTeleportList()
 
--- keep updated
-Players.PlayerAdded:Connect(function() task.wait(0.12); buildTeleportButtons() end)
-Players.PlayerRemoving:Connect(function() task.wait(0.12); buildTeleportButtons() end)
-buildTeleportButtons()
+-- Teleport quick button on main UI
+local TeleportQuickBtn = Instance.new("TextButton", TitleBar)
+TeleportQuickBtn.Size = UDim2.new(0, 40, 0, 28)
+TeleportQuickBtn.Position = UDim2.new(1, -236, 0, 10)
+TeleportQuickBtn.BackgroundColor3 = Color3.fromRGB(38,38,38)
+TeleportQuickBtn.Text = "TP"
+TeleportQuickBtn.Font = Enum.Font.GothamBold
+TeleportQuickBtn.TextColor3 = Color3.fromRGB(220,220,220)
+local tpCorner = Instance.new("UICorner", TeleportQuickBtn); tpCorner.CornerRadius = UDim.new(0,6)
+TeleportQuickBtn.MouseButton1Click:Connect(function() TeleportGui.Visible = not TeleportGui.Visible end)
 
--- ========== CREATE & REASSIGN BUTTONS INTO CATEGORIES ==========
--- Visuais: Player ESP, Computer Esp (renamed), ESP Doors, Freeze Pods
-local PlayerBtn, PlayerIndicator = createFuturisticButton("Ativar ESP Jogadores", VisuaisFrame, 220, 52, 1, Color3.fromRGB(28,140,96), Color3.fromRGB(52,215,101))
-local CompBtn, CompIndicator   = createFuturisticButton("Computer Esp", VisuaisFrame, 220, 52, 2, Color3.fromRGB(28,90,170), Color3.fromRGB(54,144,255))
-local DoorBtn, DoorIndicator   = createFuturisticButton("Ativar ESP Doors", VisuaisFrame, 220, 52, 3, Color3.fromRGB(230,200,60), Color3.fromRGB(255,220,100))
-local FreezeBtn, FreezeIndicator = createFuturisticButton("Ativar Freeze Pods", VisuaisFrame, 220, 52, 4, Color3.fromRGB(200,50,50), Color3.fromRGB(255,80,80))
-
--- Textures: Remove players Textures (renamed), Ativar Textures Tijolos Brancos
-local GraySkinBtn, GraySkinIndicator = createFuturisticButton("Remove players Textures", TexturesFrame, 220, 52, 1, Color3.fromRGB(80,80,90), Color3.fromRGB(130,130,140))
-local TextureBtn, TextureIndicator, TextureLabel = createFuturisticButton("Ativar Textures Tijolos Brancos", TexturesFrame, 220, 52, 2, Color3.fromRGB(220,220,220), Color3.fromRGB(245,245,245))
-
--- Timers: Ativar Contador de Down
-local DownTimerBtn, DownIndicator = createFuturisticButton("Ativar Contador de Down", TimersFrame, 220, 52, 1, Color3.fromRGB(200,120,30), Color3.fromRGB(255,200,90))
-
--- TELEPORT BUTTON stays to the right of menu (small)
-local TeleportBtn, TeleportIndicator = createFuturisticButton("Teleporte", Frame, 140, 44, nil, Color3.fromRGB(120,120,140), Color3.fromRGB(160,160,180))
-TeleportBtn.Position = UDim2.new(1, -156, 0.5, -22) -- place near right center
-TeleportIndicator.Size = UDim2.new(0.66,0,0.6,0)
-TeleportIndicator.Position = UDim2.new(0.16,0,0.2,0)
-
--- Close and draggable (same behaviors)
-local CloseBtn = Instance.new("TextButton", Frame); CloseBtn.Size = UDim2.new(0,36,0,36); CloseBtn.Position = UDim2.new(1,-44,0,8)
-CloseBtn.BackgroundTransparency = 1; CloseBtn.Text = "✕"; CloseBtn.Font = Enum.Font.GothamBlack; CloseBtn.TextSize = 18
-CloseBtn.TextColor3 = Color3.fromRGB(140,160,180); CloseBtn.AutoButtonColor = false
-CloseBtn.MouseButton1Click:Connect(function() Frame.Visible = false end)
-local dragging, dragStart, startPos
-Frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true; dragStart = input.Position; startPos = Frame.Position
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-    end
-end)
-Frame.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-local MenuOpen = false
-UIS.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then MenuOpen = not MenuOpen; Frame.Visible = MenuOpen end end)
-
--- Initially show Visuais
-showCategory("Visuais")
-
--- ========== BUTTON BEHAVIORS (wiring UI) ==========
-PlayerBtn.MouseButton1Click:Connect(function()
-    PlayerESPActive = not PlayerESPActive; RefreshPlayerESP()
-    if PlayerESPActive then PlayerIndicator.BackgroundColor3 = Color3.fromRGB(52,215,101) else PlayerIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220) end
-end)
-
-CompBtn.MouseButton1Click:Connect(function()
-    ComputerESPActive = not ComputerESPActive; RefreshComputerESP()
-    if ComputerESPActive then CompIndicator.BackgroundColor3 = Color3.fromRGB(54,144,255) else CompIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220) end
-end)
-
--- Door ESP button (bordas finas)
-DoorBtn.MouseButton1Click:Connect(function()
-    DoorESPActive = not DoorESPActive
-    if DoorESPActive then
-        DoorIndicator.BackgroundColor3 = Color3.fromRGB(255,220,100)
-        RefreshDoorESP()
-        if not doorDescendantAddConn then doorDescendantAddConn = Workspace.DescendantAdded:Connect(onDoorDescendantAdded) end
-        if not doorDescendantRemConn then doorDescendantRemConn = Workspace.DescendantRemoving:Connect(onDoorDescendantRemoving) end
-        if buttonLabelMap[DoorBtn] then buttonLabelMap[DoorBtn].Text = "Desativar ESP Doors" end
-    else
-        DoorIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
-        for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end
-        if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn = nil end
-        if doorDescendantRemConn then pcall(function() doorDescendantRemConn:Disconnect() end); doorDescendantRemConn = nil end
-        if buttonLabelMap[DoorBtn] then buttonLabelMap[DoorBtn].Text = "Ativar ESP Doors" end
-    end
-end)
-
--- Freeze Pods button
-FreezeBtn.MouseButton1Click:Connect(function()
-    FreezePodsActive = not FreezePodsActive
-    if FreezePodsActive then
-        FreezeIndicator.BackgroundColor3 = Color3.fromRGB(255,80,80)
-        RefreshFreezePods()
-        if not podDescendantAddConn then podDescendantAddConn = Workspace.DescendantAdded:Connect(onPodDescendantAdded) end
-        if not podDescendantRemConn then podDescendantRemConn = Workspace.DescendantRemoving:Connect(onPodDescendantRemoving) end
-        if buttonLabelMap[FreezeBtn] then buttonLabelMap[FreezeBtn].Text = "Desativar Freeze Pods" end
-    else
-        FreezeIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
-        for m,_ in pairs(podHighlights) do RemoveFreezePodHighlight(m) end
-        if podDescendantAddConn then pcall(function() podDescendantAddConn:Disconnect() end); podDescendantAddConn = nil end
-        if podDescendantRemConn then pcall(function() podDescendantRemConn:Disconnect() end); podDescendantRemConn = nil end
-        if buttonLabelMap[FreezeBtn] then buttonLabelMap[FreezeBtn].Text = "Ativar Freeze Pods" end
-    end
-end)
-
-DownTimerBtn.MouseButton1Click:Connect(function()
-    DownTimerActive = not DownTimerActive
-    if DownTimerActive then DownIndicator.BackgroundColor3 = Color3.fromRGB(255,200,90)
-    else DownIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220) end
-    if not DownTimerActive then
-        for p,_ in pairs(ragdollBillboards) do if ragdollBillboards[p] then removeRagdollBillboard(p) end end
-        for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end
-    else
-        for _,p in pairs(Players:GetPlayers()) do
-            local ok, temp = pcall(function() return p:FindFirstChild("TempPlayerStatsModule") end)
-            if ok and temp then local rag = temp:FindFirstChild("Ragdoll"); if rag and rag.Value then attachRagdollListenerToPlayer(p); end end
-        end
-    end
-end)
-
-GraySkinBtn.MouseButton1Click:Connect(function()
-    GraySkinActive = not GraySkinActive
-    if GraySkinActive then GraySkinIndicator.BackgroundColor3 = Color3.fromRGB(200,200,200); enableGraySkin()
-    else GraySkinIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220); disableGraySkin() end
-end)
-
-TextureBtn.MouseButton1Click:Connect(function()
-    if not TextureActive then enableTextureToggle() else disableTextureToggle() end
-end)
-
--- Teleport toggle behavior (keeps previous teleport GUI)
-TeleportBtn.MouseButton1Click:Connect(function()
-    TeleportGui.Visible = not TeleportGui.Visible
-    if TeleportGui.Visible then
-        buildTeleportButtons()
-        TeleportIndicator.BackgroundColor3 = Color3.fromRGB(120,200,220)
-    else
-        TeleportIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
-    end
-end)
-
--- ========== MENU SEARCH (filtra botões por texto) ==========
-local function applyMenuFilter(text)
-    text = (text or ""):lower()
-    for btn, lbl in pairs(buttonLabelMap) do
-        local ok, labelText = pcall(function() return lbl.Text end)
-        if ok and labelText then
-            local found = (text == "") or (labelText:lower():find(text) ~= nil)
-            -- also hide if the button's category isn't visible
-            local parentCategory = btn.Parent
-            local categoryVisible = parentCategory and parentCategory:IsDescendantOf(Content) and parentCategory.Visible
-            btn.Visible = found and (categoryVisible or true)
-            -- For nicety, when filter is non-empty, show all categories where match occurs
-            if text ~= "" and found and parentCategory and parentCategory.Parent == Content then
-                -- make parent category visible
-                if parentCategory == VisuaisFrame then showCategory("Visuais")
-                elseif parentCategory == TexturesFrame then showCategory("Textures")
-                elseif parentCategory == TimersFrame then showCategory("Timers") end
-            end
-        end
-    end
-end
-
-MenuSearch:GetPropertyChangedSignal("Text"):Connect(function() applyMenuFilter(MenuSearch.Text) end)
--- Also call once to set initial visibility
-applyMenuFilter("")
-
--- ========== CLEANUP ==========
+-- Cleanup function
 local function cleanupAll()
     if TextureActive then disableTextureToggle() end
     if GraySkinActive then disableGraySkin() end
@@ -996,29 +712,20 @@ local function cleanupAll()
     for m,_ in pairs(compHighlights) do RemoveComputerHighlight(m) end
     for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end
     for m,_ in pairs(podHighlights) do RemoveFreezePodHighlight(m) end
-    -- disconnect ragdoll listeners and remove billboards
     for p,conn in pairs(ragdollConnects) do pcall(function() conn:Disconnect() end); ragdollConnects[p]=nil end
     for p,_ in pairs(ragdollBillboards) do removeRagdollBillboard(p) end
     for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end
-    -- restore any textures still in backup
     if next(textureBackup) ~= nil then restoreTextures() end
-    -- disconnect workspace listeners
     if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn = nil end
     if doorDescendantRemConn then pcall(function() doorDescendantRemConn:Disconnect() end); doorDescendantRemConn = nil end
     if podDescendantAddConn then pcall(function() podDescendantAddConn:Disconnect() end); podDescendantAddConn = nil end
     if podDescendantRemConn then pcall(function() podDescendantRemConn:Disconnect() end); podDescendantRemConn = nil end
     if textureDescendantConn then pcall(function() textureDescendantConn:Disconnect() end); textureDescendantConn = nil end
-    -- teleport GUI cleanup
-    if TeleportGui and TeleportGui.Parent then
-        pcall(function() TeleportGui:Destroy() end)
-    end
-    -- destroy main GUI
-    if GUI and GUI.Parent then
-        pcall(function() GUI:Destroy() end)
-    end
+    if TeleportGui and TeleportGui.Parent then pcall(function() TeleportGui:Destroy() end) end
+    if MainFrame and MainFrame.Parent then pcall(function() MainFrame:Destroy() end) end
+    if GUI and GUI.Parent then pcall(function() GUI:Destroy() end) end
 end
 
--- Bind PlayerRemoving to cleanup for players
 Players.PlayerRemoving:Connect(function(p)
     if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p]=nil end
     if playerHighlights[p] then RemovePlayerHighlight(p) end
@@ -1028,14 +735,7 @@ Players.PlayerRemoving:Connect(function(p)
     if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p] = nil
     if compHighlights[p] then RemoveComputerHighlight(p) end
     if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p] = nil end
-    -- rebuild teleport list if necessary
-    if TeleportGui and TeleportGui.Visible then
-        task.delay(0.05, function()
-            if TeleportGui and TeleportGui.Parent then
-                buildTeleportButtons()
-            end
-        end)
-    end
+    if TeleportGui and TeleportGui.Visible then task.delay(0.05, function() rebuildTeleportList() end) end
 end)
 
-print("[FTF_ESP] Loaded successfully")
+print("[FTF_ESP] UI redesenhada e carregada")
