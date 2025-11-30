@@ -1,9 +1,8 @@
--- FTF ESP Script — fixes: toggles properly toggle off, ragdoll timer no longer auto-activates
--- Changes:
---  - createToggleItem callback fixed so it calls the category toggle properly and updates visuals from the real state
---  - attachRagdollListenerToPlayer / ragdoll changed handler respect DownTimerActive (billboards only created when timer is enabled)
---  - ensured no automatic enabling of DownTimerActive at startup
---  - small defensive pcall usage adjustments
+-- FTF ESP Script — fixes:
+--  - Tabs layout corrected so Teleport tab fits inside menu (no overflow)
+--  - Door ESP replaced with an aura-style Highlight around the door models
+--  - Keeps previous fixes: toggles actually toggle off, DownTimer doesn't auto-activate
+--  - Full script ready to replace previous version
 
 -- Services
 local UIS = game:GetService("UserInputService")
@@ -30,7 +29,6 @@ if not GUI.Parent or GUI.Parent ~= CoreGui then GUI.Parent = PlayerGui end
 
 -- ---------------------------------------------------------------------
 -- Core features (ESP, Computer ESP, Doors, Freeze Pods, Down Timer, Textures, Snow)
--- (kept from previous version with fixes)
 -- ---------------------------------------------------------------------
 
 -- PLAYER ESP
@@ -130,10 +128,12 @@ Workspace.DescendantAdded:Connect(function(obj) if ComputerESPActive and isCompu
 Workspace.DescendantRemoving:Connect(RemoveComputerHighlight)
 RunService.RenderStepped:Connect(function() if ComputerESPActive then for m,h in pairs(compHighlights) do if m and m.Parent and h and h.Parent then h.FillColor = getPcColor(m) end end end end)
 
--- DOOR ESP
+-- DOOR ESP (AURA)
+-- Replace SelectionBox approach with Highlight adorning the whole model for a clear aura.
 local DoorESPActive = false
-local doorHighlights = {}
+local doorHighlights = {} -- [model] = Highlight
 local doorDescendantAddConn, doorDescendantRemConn = nil, nil
+
 local function isDoorModel(model)
     if not model or not model:IsA("Model") then return false end
     local name = model.Name:lower()
@@ -143,6 +143,7 @@ local function isDoorModel(model)
     if name:find("double") and name:find("door") then return true end
     return false
 end
+
 local function getDoorPrimaryPart(model)
     if not model then return nil end
     local candidates = {"DoorBoard","Door", "Part", "ExitDoorTrigger", "DoorL", "DoorR", "BasePart"}
@@ -156,35 +157,64 @@ local function getDoorPrimaryPart(model)
     end
     return biggest
 end
+
 local function AddDoorHighlight(model)
     if not model or not isDoorModel(model) then return end
+    -- remove existing
     if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end) end
-    local primary = getDoorPrimaryPart(model)
-    if not primary then return end
-    local box = Instance.new("SelectionBox")
-    box.Name = "[FTF_ESP_DoorEdge_DAVID]"; box.Adornee = primary
-    pcall(function() box.Color3 = Color3.fromRGB(255,230,120) end)
-    pcall(function() box.Color = Color3.fromRGB(255,230,120) end)
-    pcall(function() box.LineThickness = 0.01 end)
-    box.Parent = Workspace
-    doorHighlights[model] = box
+    -- Create a highlight adorning the model for an aura effect
+    local h = Instance.new("Highlight")
+    h.Name = "[FTF_ESP_DoorAura_DAVID]"
+    h.Adornee = model -- set to model so highlight outlines model
+    h.Parent = Workspace
+    -- make it look like an aura: no fill (fully transparent) and solid outline yellow
+    h.FillTransparency = 1
+    h.OutlineTransparency = 0
+    h.OutlineColor = Color3.fromRGB(255,230,120)
+    -- optionally small fill color if you want slight glow:
+    -- h.FillColor = Color3.fromRGB(255,245,200); h.FillTransparency = 0.9
+    h.Enabled = true
+    doorHighlights[model] = h
 end
-local function RemoveDoorHighlight(model) if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end) end doorHighlights[model]=nil end
+
+local function RemoveDoorHighlight(model)
+    if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end) end
+    doorHighlights[model] = nil
+end
+
 local function RefreshDoorESP()
     for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end
     if not DoorESPActive then return end
-    for _,d in ipairs(Workspace:GetDescendants()) do if isDoorModel(d) then AddDoorHighlight(d) end end
+    for _,d in ipairs(Workspace:GetDescendants()) do
+        if isDoorModel(d) then
+            AddDoorHighlight(d)
+        end
+    end
 end
+
 local function onDoorDescendantAdded(desc)
     if not DoorESPActive then return end
     if not desc then return end
-    if desc:IsA("Model") and isDoorModel(desc) then task.delay(0.04, function() AddDoorHighlight(desc) end)
-    elseif desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isDoorModel(mdl) then task.delay(0.04, function() AddDoorHighlight(mdl) end) end end
+    if desc:IsA("Model") and isDoorModel(desc) then
+        task.delay(0.04, function() AddDoorHighlight(desc) end)
+    elseif desc:IsA("BasePart") then
+        local mdl = desc:FindFirstAncestorWhichIsA("Model")
+        if mdl and isDoorModel(mdl) then
+            task.delay(0.04, function() AddDoorHighlight(mdl) end)
+        end
+    end
 end
+
 local function onDoorDescendantRemoving(desc)
     if not desc then return end
-    if desc:IsA("Model") and isDoorModel(desc) then RemoveDoorHighlight(desc)
-    elseif desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isDoorModel(mdl) then RemoveDoorHighlight(mdl) end end
+    if desc:IsA("Model") and isDoorModel(desc) then
+        RemoveDoorHighlight(desc)
+    elseif desc:IsA("BasePart") then
+        local mdl = desc:FindFirstAncestorWhichIsA("Model")
+        if mdl and isDoorModel(mdl) then
+            RemoveDoorHighlight(mdl)
+        end
+    end
 end
 
 -- FREEZE PODS
@@ -223,7 +253,7 @@ local function onPodDescendantRemoving(desc)
     elseif desc and desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isFreezePodModel(mdl) then RemoveFreezePodHighlight(mdl) end end
 end
 
--- DOWN TIMER (does NOT auto-create billboards unless enabled)
+-- DOWN TIMER
 local DownTimerActive = false
 local DOWN_TIME = 28
 local ragdollBillboards = {}
@@ -279,7 +309,6 @@ RunService.Heartbeat:Connect(function()
 end)
 
 local function attachRagdollListenerToPlayer(player)
-    -- disconnect old if any
     if ragdollConnects[player] then
         pcall(function() ragdollConnects[player]:Disconnect() end)
         ragdollConnects[player] = nil
@@ -289,7 +318,6 @@ local function attachRagdollListenerToPlayer(player)
         if not ok or not tempStats then return end
         local ok2, ragdoll = pcall(function() return tempStats:WaitForChild("Ragdoll", 8) end)
         if not ok2 or not ragdoll then return end
-        -- only create billboards when DownTimerActive is true
         pcall(function()
             if ragdoll.Value and DownTimerActive then
                 local info = createRagdollBillboardFor(player)
@@ -304,7 +332,6 @@ local function attachRagdollListenerToPlayer(player)
                         if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(player, info.endTime) end
                     end
                 else
-                    -- ragdoll ended: remove billboard no matter DownTimerActive
                     removeRagdollBillboard(player)
                 end
             end)
@@ -544,11 +571,11 @@ local function disableSnowTexture()
 end
 
 -- ---------------------------------------------------------------------
--- UI: organized menu — fixed toggle behavior and DownTimer creation
+-- UI: organized menu — corrected tabs layout and door aura fix wired
 -- ---------------------------------------------------------------------
 
-local MENU_WIDTH = 420
-local MENU_HEIGHT = 360
+local MENU_WIDTH = 520 -- increased width a bit to comfortably fit items
+local MENU_HEIGHT = 380
 
 local MainFrame = Instance.new("Frame", GUI)
 MainFrame.Name = "FTF_Main"
@@ -577,8 +604,8 @@ TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 -- Search box (blank)
 local SearchBox = Instance.new("TextBox", TitleBar)
-SearchBox.Size = UDim2.new(0, 180, 0, 28)
-SearchBox.Position = UDim2.new(1, -188, 0, 10)
+SearchBox.Size = UDim2.new(0, 220, 0, 28)
+SearchBox.Position = UDim2.new(1, -240, 0, 10)
 SearchBox.BackgroundColor3 = Color3.fromRGB(26,26,26)
 SearchBox.TextColor3 = Color3.fromRGB(200,200,200)
 SearchBox.PlaceholderText = ""
@@ -594,15 +621,23 @@ CloseBtn.BackgroundTransparency = 1; CloseBtn.Size = UDim2.new(0,36,0,36); Close
 CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
 CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
--- Tabs (pills)
+-- Tabs (use dynamic layout so tabs fit always)
 local TabsParent = Instance.new("Frame", MainFrame)
 TabsParent.Size = UDim2.new(1, -24, 0, 44)
 TabsParent.Position = UDim2.new(0,12,0,56)
 TabsParent.BackgroundTransparency = 1
 
-local function createTab(name, x)
+local tabNames = {"ESP","Textures","Timers","Teleport"}
+local tabPadding = 10
+local tabCount = #tabNames
+local tabAvailableWidth = MENU_WIDTH - 24
+local tabWidth = math.max(80, math.floor((tabAvailableWidth - (tabPadding * (tabCount - 1))) / tabCount))
+
+local Tabs = {}
+for i,name in ipairs(tabNames) do
+    local x = (i-1) * (tabWidth + tabPadding)
     local t = Instance.new("TextButton", TabsParent)
-    t.Size = UDim2.new(0, 100, 0, 34)
+    t.Size = UDim2.new(0, tabWidth, 0, 34)
     t.Position = UDim2.new(0, x, 0, 4)
     t.Text = name
     t.Font = Enum.Font.GothamSemibold
@@ -611,13 +646,13 @@ local function createTab(name, x)
     t.BackgroundColor3 = Color3.fromRGB(28,28,28)
     t.AutoButtonColor = false
     local c = Instance.new("UICorner", t); c.CornerRadius = UDim.new(0,12)
-    return t
+    Tabs[name] = t
 end
 
-local TabESP = createTab("ESP", 0)
-local TabTextures = createTab("Textures", 114)
-local TabTimers = createTab("Timers", 228)
-local TabTeleport = createTab("Teleport", 342)
+local TabESP = Tabs["ESP"]
+local TabTextures = Tabs["Textures"]
+local TabTimers = Tabs["Timers"]
+local TabTeleport = Tabs["Teleport"]
 
 -- Content ScrollingFrame
 local ContentScroll = Instance.new("ScrollingFrame", MainFrame)
@@ -636,7 +671,7 @@ contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScroll.CanvasSize = UDim2.new(0,0,0, contentLayout.AbsoluteContentSize.Y + 18)
 end)
 
--- createToggleItem: fixed to call toggle handler without passing oldState and then read real state
+-- Toggle item creator
 local function createToggleItem(parent, labelText, initial, callback)
     local item = Instance.new("Frame", parent)
     item.Size = UDim2.new(0.95, 0, 0, 44)
@@ -683,11 +718,8 @@ local function createToggleItem(parent, labelText, initial, callback)
     end
 
     sw.MouseButton1Click:Connect(function()
-        -- call provided callback (which should flip the underlying state)
         pcall(function() callback() end)
-        -- read new state from external getter via callback return convention if provided,
-        -- but safer: let caller pass a function to setVisual after toggle (we do that in buildCategory)
-        -- here simply toggle visual optimistically and rely on buildCategory to refresh when needed
+        -- read new state from callback's underlying getter later; for immediate response toggle visual
         updateVisual(not state)
     end)
 
@@ -730,7 +762,7 @@ local function createButtonItem(parent, labelText, buttonText, callback)
     return item, lbl, btn
 end
 
--- Categories mapping
+-- Categories
 local Categories = {
     ["ESP"] = {
         { label = "ESP Players",      get = function() return PlayerESPActive end,    toggle = function() PlayerESPActive = not PlayerESPActive; RefreshPlayerESP(); end },
@@ -747,20 +779,17 @@ local Categories = {
         { label = "Ativar Contador de Down", get = function() return DownTimerActive end, toggle = function()
             DownTimerActive = not DownTimerActive
             if DownTimerActive then
-                -- attach listeners and create billboards only when ragdoll true
                 for _,p in pairs(Players:GetPlayers()) do
                     local ok, temp = pcall(function() return p:FindFirstChild("TempPlayerStatsModule") end)
                     if ok and temp then
                         local rag = temp:FindFirstChild("Ragdoll")
                         if rag and rag.Value then
-                            -- create billboard only when enabled
                             local info = createRagdollBillboardFor(p)
                             if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(p, info.endTime) end
                         end
                     end
                 end
             else
-                -- cleanup billboards and bottom UI
                 for p,_ in pairs(ragdollBillboards) do if ragdollBillboards[p] then removeRagdollBillboard(p) end end
                 for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end
             end
@@ -768,7 +797,7 @@ local Categories = {
     },
 }
 
--- Build content for a category (Teleport handled specially)
+-- Build content
 local currentCategory = "ESP"
 local function clearContent()
     for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
@@ -806,11 +835,8 @@ local function buildCategory(name, filter)
             if filter == "" or entry.label:lower():find(filter) then
                 local ok, state = pcall(function() return entry.get() end)
                 state = ok and state or false
-                -- pass a callback that toggles the underlying state (entry.toggle) and then refresh visual using entry.get()
                 local item, setVisual = createToggleItem(ContentScroll, entry.label, state, function()
-                    -- call toggle
                     pcall(function() entry.toggle() end)
-                    -- read actual state and update visual
                     local ok2, newState = pcall(function() return entry.get() end)
                     if ok2 and setVisual then pcall(function() setVisual(newState) end) end
                 end)
@@ -838,8 +864,12 @@ TabTeleport.MouseButton1Click:Connect(function() currentCategory = "Teleport"; s
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function() buildCategory(currentCategory, SearchBox.Text) end)
 
 -- Ensure Teleport tab updates when players join/leave
-Players.PlayerAdded:Connect(function() if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end end)
-Players.PlayerRemoving:Connect(function() if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end end)
+Players.PlayerAdded:Connect(function()
+    if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end
+end)
+Players.PlayerRemoving:Connect(function()
+    if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end
+end)
 
 -- initial build
 setActiveTabVisual(TabESP)
@@ -900,4 +930,4 @@ Players.PlayerRemoving:Connect(function(p)
     if currentCategory == "Teleport" then task.delay(0.05, function() buildCategory("Teleport", SearchBox.Text) end) end
 end)
 
-print("[FTF_ESP] Fixes applied: toggles fixed, ragdoll timer won't auto-create unless enabled")
+print("[FTF_ESP] Menu and Door ESP fixes applied")
