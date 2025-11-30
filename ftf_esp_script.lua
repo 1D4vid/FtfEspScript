@@ -1,8 +1,12 @@
--- FTF ESP Script — consolidated fixed version (patched)
--- Ajustes:
---  - ESP Doors agora usa bordas finas (SelectionBox) amarelas ao redor da peça principal da porta
---  - Mantida limpeza de conexões e comportamento de toggle
---  - Qualidade dos outros highlights mantida (players/computers/pods)
+-- FTF ESP Script — consolidated fixed version (menu overhaul)
+-- Novidades:
+--  - Menu redesenhado: horizontal, arredondado, com categorias (Visuais, Textures, Timers)
+--  - Todos os ESPs agrupados em "Visuais": Player ESP, Computer ESP, ESP Doors, Freeze Pods
+--  - "Ativar Skin Cinza" renomeado para "Remove players Textures" e movido para "Textures"
+--  - "Ativar Texture Tijolos Brancos" movido para "Textures"
+--  - "Ativar Contador de Down" em "Timers"
+--  - Sistema de pesquisa para filtrar opções por texto
+--  - Layout mais limpo e responsivo (UIListLayout) — mantém a funcionalidade existente
 
 -- Services
 local UIS = game:GetService("UserInputService")
@@ -26,15 +30,19 @@ GUI.IgnoreGuiInset = true
 pcall(function() GUI.Parent = CoreGui end)
 if not GUI.Parent or GUI.Parent ~= CoreGui then GUI.Parent = PlayerGui end
 
--- helper storage to map buttons to their visible label
+-- helper storage to map buttons to their visible label and category
 local buttonLabelMap = {}
+local buttonCategory = {} -- button -> category string
+local categoryButtons = {} -- name -> button
+local categoryNameOrder = {"Visuais","Textures","Timers"}
+local uiButtonsByCategory = { Visuais = {}, Textures = {}, Timers = {} }
 
 -- ---------- Startup notice ----------
 local function createStartupNotice(opts)
     opts = opts or {}
     local duration = opts.duration or 6
-    local width = opts.width or 380
-    local height = opts.height or 68
+    local width = opts.width or 420
+    local height = opts.height or 72
 
     local noticeGui = Instance.new("ScreenGui")
     noticeGui.Name = "FTF_StartupNotice_DAVID"
@@ -52,146 +60,243 @@ local function createStartupNotice(opts)
     panel.Name = "Panel"
     panel.Size = UDim2.new(1, 0, 1, 0)
     panel.BackgroundColor3 = Color3.fromRGB(10,14,20)
-    panel.BackgroundTransparency = 0.05
+    panel.BackgroundTransparency = 0.04
     panel.BorderSizePixel = 0
-    local corner = Instance.new("UICorner", panel); corner.CornerRadius = UDim.new(0, 14)
+    local corner = Instance.new("UICorner", panel); corner.CornerRadius = UDim.new(0, 16)
     local stroke = Instance.new("UIStroke", panel); stroke.Color = Color3.fromRGB(55,140,220); stroke.Thickness = 1.2; stroke.Transparency = 0.28
 
     local iconBg = Instance.new("Frame", panel)
-    iconBg.Size = UDim2.new(0, 36, 0, 36)
-    iconBg.Position = UDim2.new(0, 16, 0.5, -18)
+    iconBg.Size = UDim2.new(0, 40, 0, 40)
+    iconBg.Position = UDim2.new(0, 14, 0.5, -20)
     iconBg.BackgroundColor3 = Color3.fromRGB(16,20,26)
-    local iconCorner = Instance.new("UICorner", iconBg); iconCorner.CornerRadius = UDim.new(0,10)
+    local iconCorner = Instance.new("UICorner", iconBg); iconCorner.CornerRadius = UDim.new(0,12)
     local iconLabel = Instance.new("TextLabel", iconBg)
     iconLabel.Size = UDim2.new(1, -6, 1, -6); iconLabel.Position = UDim2.new(0,3,0,3)
     iconLabel.BackgroundTransparency = 1; iconLabel.Font = Enum.Font.FredokaOne; iconLabel.Text = "K"
-    iconLabel.TextColor3 = Color3.fromRGB(100,170,220); iconLabel.TextSize = 20
+    iconLabel.TextColor3 = Color3.fromRGB(100,170,220); iconLabel.TextSize = 22
 
     local txt = Instance.new("TextLabel", panel)
-    txt.Size = UDim2.new(1, -96, 1, -8)
-    txt.Position = UDim2.new(0, 76, 0, 4)
+    txt.Size = UDim2.new(1, -120, 1, -12)
+    txt.Position = UDim2.new(0, 86, 0, 6)
     txt.BackgroundTransparency = 1
     txt.Font = Enum.Font.GothamBold
     txt.TextSize = 15
     txt.TextColor3 = Color3.fromRGB(180,200,220)
-    txt.Text = 'Clique na letra "K" para ativar o menu'
+    txt.Text = 'Pressione "K" para abrir/fechar o menu'
     txt.TextXAlignment = Enum.TextXAlignment.Left
     txt.TextWrapped = true
 
-    local hint = Instance.new("TextLabel", panel)
-    hint.Size = UDim2.new(1, -96, 0, 16)
-    hint.Position = UDim2.new(0, 76, 1, -22)
-    hint.BackgroundTransparency = 1
-    hint.Font = Enum.Font.Gotham
-    hint.TextSize = 11
-    hint.TextColor3 = Color3.fromRGB(120,140,170)
-    hint.Text = "Pressione novamente para fechar"
-    hint.TextXAlignment = Enum.TextXAlignment.Left
-
     -- tween in/out
-    TweenService:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundTransparency = 0.0}):Play()
+    TweenService:Create(panel, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.0}):Play()
     task.delay(duration, function()
         if noticeGui and noticeGui.Parent then noticeGui:Destroy() end
     end)
 end
 createStartupNotice()
 
--- ---------- Main menu frame ----------
-local gWidth, gHeight = 360, 540 -- aumentado para acomodar botões
+-- ---------- Main (horizontal) menu frame ----------
+local gWidth, gHeight = 760, 220
 local Frame = Instance.new("Frame", GUI)
 Frame.Name = "FTF_Menu_Frame"
-Frame.BackgroundColor3 = Color3.fromRGB(8,10,14)
+Frame.BackgroundColor3 = Color3.fromRGB(10,12,16)
 Frame.Size = UDim2.new(0, gWidth, 0, gHeight)
-Frame.Position = UDim2.new(0.5, -gWidth/2, 0.17, 0)
+Frame.Position = UDim2.new(0.5, -gWidth/2, 0.12, 0)
 Frame.Active = true
 Frame.Visible = false
 Frame.BorderSizePixel = 0
 Frame.ClipsDescendants = true
-local aCorner = Instance.new("UICorner", Frame); aCorner.CornerRadius = UDim.new(0,8)
+local aCorner = Instance.new("UICorner", Frame); aCorner.CornerRadius = UDim.new(0,18)
+local stroke = Instance.new("UIStroke", Frame); stroke.Color = Color3.fromRGB(40,50,64); stroke.Thickness = 1; stroke.Transparency = 0.2
 
-local Accent = Instance.new("Frame", Frame); Accent.Size = UDim2.new(0,8,1,0); Accent.Position = UDim2.new(0,4,0,0)
-Accent.BackgroundColor3 = Color3.fromRGB(49,157,255); Accent.BorderSizePixel = 0
-local Title = Instance.new("TextLabel", Frame)
-Title.Text = "FTF - David's ESP"; Title.Font = Enum.Font.FredokaOne; Title.TextSize = 20
-Title.TextColor3 = Color3.fromRGB(170,200,230); Title.Size = UDim2.new(1, -32, 0, 36); Title.Position = UDim2.new(0,28,0,8)
-Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Left
+-- Header: title + search
+local Header = Instance.new("Frame", Frame)
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 56)
+Header.Position = UDim2.new(0,0,0,0)
+Header.BackgroundTransparency = 1
 
-local Line = Instance.new("Frame", Frame)
-Line.BackgroundColor3 = Color3.fromRGB(20,28,36); Line.Position = UDim2.new(0,0,0,48); Line.Size = UDim2.new(1,0,0,2)
+local Title = Instance.new("TextLabel", Header)
+Title.Name = "Title"
+Title.Text = "FTF - David's ESP"
+Title.Font = Enum.Font.FredokaOne
+Title.TextSize = 20
+Title.TextColor3 = Color3.fromRGB(200,220,240)
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 22, 0, 12)
+Title.Size = UDim2.new(0.5, 0, 0, 32)
+Title.TextXAlignment = Enum.TextXAlignment.Left
 
--- button creator that returns (button, indicator, labelRef)
-local function createFuturisticButton(txt, ypos, c1, c2)
-    local btnOuter = Instance.new("TextButton", Frame)
+-- Search box
+local SearchBox = Instance.new("TextBox", Header)
+SearchBox.Name = "SearchBox"
+SearchBox.PlaceholderText = "Pesquisar opções..."
+SearchBox.Text = ""
+SearchBox.ClearTextOnFocus = false
+SearchBox.Size = UDim2.new(0, 240, 0, 28)
+SearchBox.Position = UDim2.new(1, -260, 0, 14)
+SearchBox.BackgroundColor3 = Color3.fromRGB(14,16,20)
+SearchBox.TextColor3 = Color3.fromRGB(200,220,240)
+SearchBox.TextSize = 14
+local searchCorner = Instance.new("UICorner", SearchBox); searchCorner.CornerRadius = UDim.new(0,10)
+local searchStroke = Instance.new("UIStroke", SearchBox); searchStroke.Color = Color3.fromRGB(60,80,110); searchStroke.Thickness = 1; searchStroke.Transparency = 0.6
+
+-- Left: categories column
+local LeftCol = Instance.new("Frame", Frame)
+LeftCol.Name = "LeftCol"
+LeftCol.Size = UDim2.new(0, 170, 1, -64)
+LeftCol.Position = UDim2.new(0, 12, 0, 64)
+LeftCol.BackgroundTransparency = 1
+
+local leftCorner = Instance.new("UICorner", LeftCol); leftCorner.CornerRadius = UDim.new(0,12)
+
+-- Category buttons stacked
+local CatLayout = Instance.new("UIListLayout", LeftCol)
+CatLayout.SortOrder = Enum.SortOrder.LayoutOrder
+CatLayout.Padding = UDim.new(0,10)
+
+local function createCategoryButton(text)
+    local btn = Instance.new("TextButton", LeftCol)
+    btn.Size = UDim2.new(1, 0, 0, 42)
+    btn.Text = text
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 15
+    btn.TextColor3 = Color3.fromRGB(180,200,220)
+    btn.AutoButtonColor = false
+    btn.BackgroundColor3 = Color3.fromRGB(12,14,18)
+    local cr = Instance.new("UICorner", btn); cr.CornerRadius = UDim.new(0,10)
+    local stroke = Instance.new("UIStroke", btn); stroke.Color = Color3.fromRGB(36,46,60); stroke.Thickness = 1; stroke.Transparency = 0.4
+    return btn
+end
+
+-- Create category buttons
+for i,cat in ipairs(categoryNameOrder) do
+    local btn = createCategoryButton(cat)
+    btn.LayoutOrder = i
+    categoryButtons[cat] = btn
+end
+
+-- Right: content area where option buttons appear
+local ContentArea = Instance.new("Frame", Frame)
+ContentArea.Name = "ContentArea"
+ContentArea.Size = UDim2.new(1, -200, 1, -64)
+ContentArea.Position = UDim2.new(0, 188, 0, 64)
+ContentArea.BackgroundTransparency = 1
+
+local contentCorner = Instance.new("UICorner", ContentArea); contentCorner.CornerRadius = UDim.new(0,10)
+
+-- Scrolling frame for options (in case exceed area)
+local OptionsScroll = Instance.new("ScrollingFrame", ContentArea)
+OptionsScroll.Name = "OptionsScroll"
+OptionsScroll.Size = UDim2.new(1, -12, 1, 0)
+OptionsScroll.Position = UDim2.new(0, 6, 0, 0)
+OptionsScroll.BackgroundTransparency = 1
+OptionsScroll.CanvasSize = UDim2.new(0,0,0,0)
+OptionsScroll.ScrollBarThickness = 6
+OptionsScroll.BorderSizePixel = 0
+local optLayout = Instance.new("UIListLayout", OptionsScroll)
+optLayout.SortOrder = Enum.SortOrder.LayoutOrder
+optLayout.Padding = UDim.new(0,8)
+
+-- Reusable futuristic button creator (now parent-aware, stacked via UIListLayout)
+local function createFuturisticButtonNamed(txt, c1, c2, parent)
+    parent = parent or OptionsScroll
+    local btnOuter = Instance.new("TextButton", parent)
     btnOuter.Name = "FuturBtn_"..txt:gsub("%s+","_")
     btnOuter.BackgroundTransparency = 1
     btnOuter.BorderSizePixel = 0
     btnOuter.AutoButtonColor = false
-    btnOuter.Size = UDim2.new(1, -36, 0, 50)
-    btnOuter.Position = UDim2.new(0, 18, 0, ypos)
+    btnOuter.Size = UDim2.new(1, -12, 0, 46)
     btnOuter.Text = ""
     btnOuter.ClipsDescendants = true
+    btnOuter.LayoutOrder = (#parent:GetChildren()) + 1
 
     local bg = Instance.new("Frame", btnOuter); bg.Name = "BG"; bg.Size = UDim2.new(1,0,1,0); bg.BackgroundColor3 = c1; bg.BorderSizePixel = 0
-    local corner = Instance.new("UICorner", bg); corner.CornerRadius = UDim.new(0,12)
+    local corner = Instance.new("UICorner", bg); corner.CornerRadius = UDim.new(0,10)
     local grad = Instance.new("UIGradient", bg); grad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0,c1), ColorSequenceKeypoint.new(0.6,c2), ColorSequenceKeypoint.new(1,c1)}; grad.Rotation=45
 
-    local inner = Instance.new("Frame", bg); inner.Name="Inner"; inner.Size=UDim2.new(1,-8,1,-10); inner.Position=UDim2.new(0,4,0,5)
-    inner.BackgroundColor3 = Color3.fromRGB(12,14,18); inner.BorderSizePixel = 0
-    local innerCorner = Instance.new("UICorner", inner); innerCorner.CornerRadius = UDim.new(0,10)
-    local innerStroke = Instance.new("UIStroke", inner); innerStroke.Color = Color3.fromRGB(28,36,46); innerStroke.Thickness=1; innerStroke.Transparency=0.2
-
-    local shine = Instance.new("Frame", inner); shine.Size = UDim2.new(1,0,0.28,0); shine.BackgroundTransparency = 0.9; shine.BackgroundColor3 = Color3.fromRGB(30,45,60)
-    local shineCorner = Instance.new("UICorner", shine); shineCorner.CornerRadius = UDim.new(0,10)
+    local inner = Instance.new("Frame", bg); inner.Name="Inner"; inner.Size=UDim2.new(1,-8,1,-8); inner.Position=UDim2.new(0,4,0,4)
+    inner.BackgroundColor3 = Color3.fromRGB(8,10,12); inner.BorderSizePixel = 0
+    local innerCorner = Instance.new("UICorner", inner); innerCorner.CornerRadius = UDim.new(0,8)
+    local innerStroke = Instance.new("UIStroke", inner); innerStroke.Color = Color3.fromRGB(24,34,46); innerStroke.Thickness=1; innerStroke.Transparency=0.3
 
     local label = Instance.new("TextLabel", inner)
-    label.Size = UDim2.new(1, -24, 1, -4); label.Position = UDim2.new(0,12,0,2)
+    label.Size = UDim2.new(1, -24, 1, 0); label.Position = UDim2.new(0,12,0,0)
     label.BackgroundTransparency = 1; label.Font = Enum.Font.GothamSemibold; label.Text = txt
-    label.TextSize = 15; label.TextColor3 = Color3.fromRGB(170,195,215); label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextSize = 15; label.TextColor3 = Color3.fromRGB(180,200,220); label.TextXAlignment = Enum.TextXAlignment.Left
 
-    local indicator = Instance.new("Frame", inner); indicator.Size = UDim2.new(0,50,0,26); indicator.Position = UDim2.new(1,-64,0.5,-13)
+    local indicator = Instance.new("Frame", inner); indicator.Size = UDim2.new(0,48,0,20); indicator.Position = UDim2.new(1,-64,0.5,-10)
     indicator.BackgroundColor3 = Color3.fromRGB(10,12,14); indicator.BorderSizePixel = 0
-    local indCorner = Instance.new("UICorner", indicator); indCorner.CornerRadius = UDim.new(0,10)
-    local indBar = Instance.new("Frame", indicator); indBar.Size = UDim2.new(0.38,0,0.5,0); indBar.Position = UDim2.new(0.06,0,0.25,0)
-    indBar.BackgroundColor3 = Color3.fromRGB(90,160,220); local indCorner2 = Instance.new("UICorner", indBar); indCorner2.CornerRadius = UDim.new(0,8)
+    local indCorner = Instance.new("UICorner", indicator); indCorner.CornerRadius = UDim.new(0,8)
+    local indBar = Instance.new("Frame", indicator); indBar.Size = UDim2.new(0.38,0,0.6,0); indBar.Position = UDim2.new(0.06,0,0.2,0)
+    indBar.BackgroundColor3 = Color3.fromRGB(90,160,220); local indCorner2 = Instance.new("UICorner", indBar); indCorner2.CornerRadius = UDim.new(0,6)
 
-    -- hover/click animations
-    local hoverTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     btnOuter.MouseEnter:Connect(function()
         pcall(function()
-            TweenService:Create(grad, hoverTweenInfo, {Rotation = 135}):Play()
-            TweenService:Create(indBar, hoverTweenInfo, {Size = UDim2.new(0.66,0,0.66,0), Position = UDim2.new(0.16,0,0.17,0)}):Play()
-            TweenService:Create(label, hoverTweenInfo, {TextColor3 = Color3.fromRGB(220,235,245)}):Play()
+            TweenService:Create(grad, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 135}):Play()
+            TweenService:Create(indBar, TweenInfo.new(0.18), {Size = UDim2.new(0.66,0,0.86,0), Position = UDim2.new(0.12,0,0.07,0)}):Play()
+            TweenService:Create(label, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(230,245,255)}):Play()
         end)
     end)
     btnOuter.MouseLeave:Connect(function()
         pcall(function()
-            TweenService:Create(grad, hoverTweenInfo, {Rotation = 45}):Play()
-            TweenService:Create(indBar, hoverTweenInfo, {Size = UDim2.new(0.38,0,0.5,0), Position = UDim2.new(0.06,0,0.25,0)}):Play()
-            TweenService:Create(label, hoverTweenInfo, {TextColor3 = Color3.fromRGB(170,195,215)}):Play()
+            TweenService:Create(grad, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 45}):Play()
+            TweenService:Create(indBar, TweenInfo.new(0.18), {Size = UDim2.new(0.38,0,0.6,0), Position = UDim2.new(0.06,0,0.2,0)}):Play()
+            TweenService:Create(label, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(180,200,220)}):Play()
         end)
     end)
     btnOuter.MouseButton1Down:Connect(function() pcall(function() TweenService:Create(inner, TweenInfo.new(0.09), {Position = UDim2.new(0,6,0,6)}):Play() end) end)
-    btnOuter.MouseButton1Up:Connect(function() pcall(function() TweenService:Create(inner, TweenInfo.new(0.12), {Position = UDim2.new(0,4,0,5)}):Play() end) end)
+    btnOuter.MouseButton1Up:Connect(function() pcall(function() TweenService:Create(inner, TweenInfo.new(0.12), {Position = UDim2.new(0,4,0,4)}):Play() end) end)
 
-    -- store label for updates
+    -- register label for search and external renaming
     buttonLabelMap[btnOuter] = label
 
     return btnOuter, indBar, label
 end
 
--- Create buttons (inclui ESP Doors)
-local PlayerBtn, PlayerIndicator = createFuturisticButton("Ativar ESP Jogadores", 70, Color3.fromRGB(28,140,96), Color3.fromRGB(52,215,101))
-local CompBtn, CompIndicator   = createFuturisticButton("Ativar Destacar Computadores", 136, Color3.fromRGB(28,90,170), Color3.fromRGB(54,144,255))
-local DoorBtn, DoorIndicator   = createFuturisticButton("Ativar ESP Doors", 202, Color3.fromRGB(230,200,60), Color3.fromRGB(255,220,100))
-local FreezeBtn, FreezeIndicator = createFuturisticButton("Ativar Freeze Pods", 268, Color3.fromRGB(200,50,50), Color3.fromRGB(255,80,80))
-local DownTimerBtn, DownIndicator = createFuturisticButton("Ativar Contador de Down", 334, Color3.fromRGB(200,120,30), Color3.fromRGB(255,200,90))
-local GraySkinBtn, GraySkinIndicator = createFuturisticButton("Ativar Skin Cinza", 400, Color3.fromRGB(80,80,90), Color3.fromRGB(130,130,140))
-local TextureBtn, TextureIndicator, TextureLabel = createFuturisticButton("Ativar Texture Tijolos Brancos", 466, Color3.fromRGB(220,220,220), Color3.fromRGB(245,245,245))
+-- create option buttons and map to categories
+-- Visuais category
+local PlayerBtn, PlayerIndicator = createFuturisticButtonNamed("Player ESP", Color3.fromRGB(28,140,96), Color3.fromRGB(52,215,101), OptionsScroll)
+buttonCategory[PlayerBtn] = "Visuais"; table.insert(uiButtonsByCategory["Visuais"], PlayerBtn)
+
+local CompBtn, CompIndicator = createFuturisticButtonNamed("Computer ESP", Color3.fromRGB(28,90,170), Color3.fromRGB(54,144,255), OptionsScroll)
+buttonCategory[CompBtn] = "Visuais"; table.insert(uiButtonsByCategory["Visuais"], CompBtn)
+
+local DoorBtn, DoorIndicator = createFuturisticButtonNamed("ESP Doors", Color3.fromRGB(230,200,60), Color3.fromRGB(255,220,100), OptionsScroll)
+buttonCategory[DoorBtn] = "Visuais"; table.insert(uiButtonsByCategory["Visuais"], DoorBtn)
+
+local FreezeBtn, FreezeIndicator = createFuturisticButtonNamed("Freeze Pods ESP", Color3.fromRGB(200,50,50), Color3.fromRGB(255,80,80), OptionsScroll)
+buttonCategory[FreezeBtn] = "Visuais"; table.insert(uiButtonsByCategory["Visuais"], FreezeBtn)
+
+-- Textures category
+local RemoveTexBtn, RemoveTexIndicator = createFuturisticButtonNamed("Remove players Textures", Color3.fromRGB(90,90,96), Color3.fromRGB(130,130,140), OptionsScroll)
+buttonCategory[RemoveTexBtn] = "Textures"; table.insert(uiButtonsByCategory["Textures"], RemoveTexBtn)
+
+local TextureBtn, TextureIndicator = createFuturisticButtonNamed("Ativar Textures Tijolos Brancos", Color3.fromRGB(220,220,220), Color3.fromRGB(245,245,245), OptionsScroll)
+buttonCategory[TextureBtn] = "Textures"; table.insert(uiButtonsByCategory["Textures"], TextureBtn)
+
+-- Timers category
+local DownTimerBtn, DownIndicator = createFuturisticButtonNamed("Ativar Contador de Down", Color3.fromRGB(200,120,30), Color3.fromRGB(255,200,90), OptionsScroll)
+buttonCategory[DownTimerBtn] = "Timers"; table.insert(uiButtonsByCategory["Timers"], DownTimerBtn)
+
+-- adjust canvas size automatically
+local function updateCanvasSize()
+    local total = 0
+    for _,obj in ipairs(optLayout:GetChildren()) do end -- no-op to satisfy linter
+    -- compute total height by summing absolute sizes (approx)
+    local list = OptionsScroll:GetDescendants()
+    for _,v in ipairs(OptionsScroll:GetChildren()) do
+        if v:IsA("TextButton") then
+            total = total + v.AbsoluteSize.Y + optLayout.Padding.Offset
+        end
+    end
+    OptionsScroll.CanvasSize = UDim2.new(0,0,0, math.max(0, total))
+end
+optLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() OptionsScroll.CanvasSize = UDim2.new(0,0,0, optLayout.AbsoluteContentSize.Y + 8) end)
 
 -- Close and draggable
-local CloseBtn = Instance.new("TextButton", Frame); CloseBtn.Size = UDim2.new(0,36,0,36); CloseBtn.Position = UDim2.new(1,-44,0,8)
+local CloseBtn = Instance.new("TextButton", Frame); CloseBtn.Size = UDim2.new(0,44,0,44); CloseBtn.Position = UDim2.new(1,-52,0,8)
 CloseBtn.BackgroundTransparency = 1; CloseBtn.Text = "✕"; CloseBtn.Font = Enum.Font.GothamBlack; CloseBtn.TextSize = 18
-CloseBtn.TextColor3 = Color3.fromRGB(140,160,180); CloseBtn.AutoButtonColor = false
+CloseBtn.TextColor3 = Color3.fromRGB(160,180,200); CloseBtn.AutoButtonColor = false
 CloseBtn.MouseButton1Click:Connect(function() Frame.Visible = false end)
 local dragging, dragStart, startPos
 Frame.InputBegan:Connect(function(input)
@@ -206,8 +311,68 @@ Frame.InputChanged:Connect(function(input)
         Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
+
 local MenuOpen = false
 UIS.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then MenuOpen = not MenuOpen; Frame.Visible = MenuOpen end end)
+
+-- Helper: set active category and refresh visible options
+local activeCategory = "Visuais"
+local function setActiveCategory(cat)
+    activeCategory = cat
+    -- update category button style
+    for name,btn in pairs(categoryButtons) do
+        if name == cat then
+            btn.BackgroundColor3 = Color3.fromRGB(20,30,40)
+            btn.TextColor3 = Color3.fromRGB(240,240,240)
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(12,14,18)
+            btn.TextColor3 = Color3.fromRGB(180,200,220)
+        end
+    end
+    -- update options visibility based on category and search
+    local query = string.lower(tostring(SearchBox.Text or ""))
+    for btn,label in pairs(buttonLabelMap) do
+        local cat = buttonCategory[btn] or "Visuais"
+        local matchesCat = (cat == cat) -- no-op to keep variable readable
+        local visible = (cat == activeCategory)
+        -- apply search filter
+        if visible and query ~= "" then
+            local labelText = string.lower(label.Text or "")
+            if not labelText:find(query) then visible = false end
+        end
+        btn.Visible = visible
+    end
+    -- force layout update
+    task.delay(0.01, function() OptionsScroll.CanvasSize = UDim2.new(0,0,0, optLayout.AbsoluteContentSize.Y + 8) end)
+end
+
+-- connect category buttons
+for name,btn in pairs(categoryButtons) do
+    btn.MouseButton1Click:Connect(function() setActiveCategory(name) end)
+end
+
+-- initial activate
+setActiveCategory(activeCategory)
+
+-- Search handling
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local query = string.lower(tostring(SearchBox.Text or ""))
+    for btn,label in pairs(buttonLabelMap) do
+        local cat = buttonCategory[btn] or "Visuais"
+        local visible = (cat == activeCategory)
+        if visible and query ~= "" then
+            local labelText = string.lower(label.Text or "")
+            if not labelText:find(query) then visible = false end
+        end
+        btn.Visible = visible
+    end
+    OptionsScroll.CanvasSize = UDim2.new(0,0,0, optLayout.AbsoluteContentSize.Y + 8)
+end)
+
+-- ========== Existing feature wiring (kept mostly intact) ==========
+-- Player ESP, Computer ESP, Door ESP (SelectionBox logic), Freeze Pods (Highlight), GraySkin/Remove textures, Texture toggle, Down timer
+-- For brevity and stability we reuse the previously working functions and hook them to the new buttons.
+-- NOTE: some functions refer to button variables defined above (PlayerBtn, CompBtn, DoorBtn, FreezeBtn, RemoveTexBtn, TextureBtn, DownTimerBtn)
 
 -- ========== PLAYER ESP ==========
 local PlayerESPActive = false
@@ -224,7 +389,7 @@ end
 local function AddPlayerHighlight(player)
     if player == LocalPlayer then return end
     if not player.Character then return end
-    if playerHighlights[player] then playerHighlights[player]:Destroy(); playerHighlights[player]=nil end
+    if playerHighlights[player] then pcall(function() playerHighlights[player]:Destroy() end); playerHighlights[player]=nil end
     local fill, outline = HighlightColorForPlayer(player)
     local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_PlayerAura_DAVID]"; h.Adornee = player.Character
@@ -238,7 +403,7 @@ local function RemovePlayerHighlight(player) if playerHighlights[player] then pc
 local function AddNameTag(player)
     if player==LocalPlayer then return end
     if not player.Character or not player.Character:FindFirstChild("Head") then return end
-    if NameTags[player] then NameTags[player]:Destroy(); NameTags[player]=nil end
+    if NameTags[player] then pcall(function() NameTags[player]:Destroy() end); NameTags[player]=nil end
     local billboard = Instance.new("BillboardGui", GUI)
     billboard.Name = "[FTFName]"; billboard.Adornee = player.Character.Head
     billboard.Size = UDim2.new(0,110,0,20); billboard.StudsOffset = Vector3.new(0,2.18,0); billboard.AlwaysOnTop = true
@@ -294,7 +459,7 @@ local function getPcColor(model)
 end
 local function AddComputerHighlight(model)
     if not isComputerModel(model) then return end
-    if compHighlights[model] then compHighlights[model]:Destroy(); compHighlights[model]=nil end
+    if compHighlights[model] then pcall(function() compHighlights[model]:Destroy() end); compHighlights[model]=nil end
     local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_ComputerAura_DAVID]"; h.Adornee = model
     h.Parent = Workspace
@@ -313,7 +478,7 @@ Workspace.DescendantAdded:Connect(function(obj) if ComputerESPActive and isCompu
 Workspace.DescendantRemoving:Connect(RemoveComputerHighlight)
 RunService.RenderStepped:Connect(function() if ComputerESPActive then for m,h in pairs(compHighlights) do if m and m.Parent and h and h.Parent then h.FillColor = getPcColor(m) end end end end)
 
--- ========== ESP DOORS (BORDAS FINAS AMARELAS) ==========
+-- ========== ESP DOORS (bordas finas via SelectionBox) ==========
 local DoorESPActive = false
 local doorHighlights = {} -- model => SelectionBox
 local doorDescendantAddConn = nil
@@ -322,23 +487,18 @@ local doorDescendantRemConn = nil
 local function isDoorModel(model)
     if not model or not model:IsA("Model") then return false end
     local name = model.Name:lower()
-    -- detecta portas por nome (flexível)
     if name:find("door") then return true end
     if name:find("exitdoor") then return true end
-    if name:find("single") and name:find("door") then return true end
-    if name:find("double") and name:find("door") then return true end
     return false
 end
 
 local function getDoorPrimaryPart(model)
     if not model then return nil end
-    -- procure por DoorBoard, Part, ExitDoorTrigger, Door etc.
     local candidates = {"DoorBoard","Door", "Part", "ExitDoorTrigger", "DoorL", "DoorR", "BasePart"}
     for _,n in ipairs(candidates) do
         local v = model:FindFirstChild(n, true)
         if v and v:IsA("BasePart") then return v end
     end
-    -- fallback: maior BasePart do modelo
     local biggest
     for _,c in ipairs(model:GetDescendants()) do
         if c:IsA("BasePart") then
@@ -350,22 +510,15 @@ end
 
 local function AddDoorHighlight(model)
     if not model or not isDoorModel(model) then return end
-    -- já existe: remover primeiro (substituição segura)
-    if doorHighlights[model] then
-        pcall(function() doorHighlights[model]:Destroy() end)
-        doorHighlights[model] = nil
-    end
+    if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end); doorHighlights[model]=nil end
     local primary = getDoorPrimaryPart(model)
     if not primary then return end
     local box = Instance.new("SelectionBox")
     box.Name = "[FTF_ESP_DoorEdge_DAVID]"
     box.Adornee = primary
-    -- cor amarela suave
-    pcall(function() box.Color3 = Color3.fromRGB(255,230,120) end)
-    pcall(function() box.Color = Color3.fromRGB(255,230,120) end) -- em caso de propriedades diferentes
-    -- linha fina e sutil
-    if pcall(function() box.LineThickness = 0.01 end) then end
-    if pcall(function() box.SurfaceTransparency = 1 end) then end
+    box.Color3 = Color3.fromRGB(255,230,120)
+    if pcall(function() box.LineThickness = 0.02 end) then end
+    box.SurfaceTransparency = 1
     box.Parent = Workspace
     doorHighlights[model] = box
 end
@@ -378,39 +531,29 @@ local function RefreshDoorESP()
     for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end
     if not DoorESPActive then return end
     for _,d in ipairs(Workspace:GetDescendants()) do
-        if isDoorModel(d) then
-            -- se for model, adicione borda na peça principal
-            AddDoorHighlight(d)
-        end
+        if isDoorModel(d) then AddDoorHighlight(d) end
     end
 end
 
 local function onDoorDescendantAdded(desc)
     if not DoorESPActive then return end
-    if not desc then return end
-    if desc:IsA("Model") and isDoorModel(desc) then
-        task.delay(0.04, function() AddDoorHighlight(desc) end)
-    elseif desc:IsA("BasePart") then
+    if desc and desc:IsA("Model") and isDoorModel(desc) then task.delay(0.04, function() AddDoorHighlight(desc) end) end
+    if desc and desc:IsA("BasePart") then
         local mdl = desc:FindFirstAncestorWhichIsA("Model")
-        if mdl and isDoorModel(mdl) then
-            task.delay(0.04, function() AddDoorHighlight(mdl) end)
-        end
+        if mdl and isDoorModel(mdl) then task.delay(0.04, function() AddDoorHighlight(mdl) end) end
     end
 end
 
 local function onDoorDescendantRemoving(desc)
     if not desc then return end
-    if desc:IsA("Model") and isDoorModel(desc) then
-        RemoveDoorHighlight(desc)
-    elseif desc:IsA("BasePart") then
+    if desc:IsA("Model") and isDoorModel(desc) then RemoveDoorHighlight(desc) end
+    if desc and desc:IsA("BasePart") then
         local mdl = desc:FindFirstAncestorWhichIsA("Model")
-        if mdl and isDoorModel(mdl) then
-            RemoveDoorHighlight(mdl)
-        end
+        if mdl and isDoorModel(mdl) then RemoveDoorHighlight(mdl) end
     end
 end
 
--- ========== FREEZE PODS AURA (mantido) ==========
+-- ========== FREEZE PODS AURA ==========
 local FreezePodsActive = false
 local podHighlights = {}
 local podDescendantAddConn = nil
@@ -541,7 +684,7 @@ end
 Players.PlayerAdded:Connect(function(p) attachRagdollListenerToPlayer(p); p.CharacterAdded:Connect(function() wait(0.06); if ragdollBillboards[p] then removeRagdollBillboard(p); createRagdollBillboardFor(p) end end) end)
 for _,p in pairs(Players:GetPlayers()) do attachRagdollListenerToPlayer(p) end
 
--- ========== GRAY SKIN ==========
+-- ========== GRAY SKIN / Remove players Textures ==========
 local GraySkinActive = false
 local skinBackup = {}
 local grayConns = {}
@@ -665,12 +808,9 @@ local function enableTextureToggle()
     if TextureActive then return end
     TextureActive = true
     TextureIndicator.BackgroundColor3 = Color3.fromRGB(245,245,245)
-    TweenService:Create(TextureIndicator, TweenInfo.new(0.18), {Size = UDim2.new(0.78,0,0.72,0), Position = UDim2.new(0.11,0,0.14,0)}):Play()
-    setmetatable({}, {__mode = "k"}) -- harmless placeholder
     task.spawn(applyWhiteBrickToAll)
     textureDescendantConn = Workspace.DescendantAdded:Connect(onWorkspaceDescendantAdded)
-    -- update visible label
-    if buttonLabelMap[TextureBtn] then buttonLabelMap[TextureBtn].Text = "Desativar Texture Tijolos Brancos" end
+    if buttonLabelMap[TextureBtn] then buttonLabelMap[TextureBtn].Text = "Desativar Textures Tijolos Brancos" end
 end
 
 local function disableTextureToggle()
@@ -679,22 +819,23 @@ local function disableTextureToggle()
     if textureDescendantConn then pcall(function() textureDescendantConn:Disconnect() end); textureDescendantConn = nil end
     task.spawn(restoreTextures)
     TextureIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
-    TweenService:Create(TextureIndicator, TweenInfo.new(0.22), {Size = UDim2.new(0.38,0,0.5,0), Position = UDim2.new(0.06,0,0.25,0)}):Play()
-    if buttonLabelMap[TextureBtn] then buttonLabelMap[TextureBtn].Text = "Ativar Texture Tijolos Brancos" end
+    if buttonLabelMap[TextureBtn] then buttonLabelMap[TextureBtn].Text = "Ativar Textures Tijolos Brancos" end
 end
 
--- ========== BUTTON BEHAVIORS (wiring UI) ==========
+-- ========== BUTTON BEHAVIORS (wiring new UI buttons) ==========
+-- Player ESP toggle
 PlayerBtn.MouseButton1Click:Connect(function()
     PlayerESPActive = not PlayerESPActive; RefreshPlayerESP()
     if PlayerESPActive then PlayerIndicator.BackgroundColor3 = Color3.fromRGB(52,215,101) else PlayerIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220) end
 end)
 
+-- Computer ESP toggle
 CompBtn.MouseButton1Click:Connect(function()
     ComputerESPActive = not ComputerESPActive; RefreshComputerESP()
     if ComputerESPActive then CompIndicator.BackgroundColor3 = Color3.fromRGB(54,144,255) else CompIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220) end
 end)
 
--- Door ESP button (bordas finas)
+-- Door ESP toggle
 DoorBtn.MouseButton1Click:Connect(function()
     DoorESPActive = not DoorESPActive
     if DoorESPActive then
@@ -702,17 +843,15 @@ DoorBtn.MouseButton1Click:Connect(function()
         RefreshDoorESP()
         if not doorDescendantAddConn then doorDescendantAddConn = Workspace.DescendantAdded:Connect(onDoorDescendantAdded) end
         if not doorDescendantRemConn then doorDescendantRemConn = Workspace.DescendantRemoving:Connect(onDoorDescendantRemoving) end
-        if buttonLabelMap[DoorBtn] then buttonLabelMap[DoorBtn].Text = "Desativar ESP Doors" end
     else
         DoorIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
         for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end
         if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn = nil end
         if doorDescendantRemConn then pcall(function() doorDescendantRemConn:Disconnect() end); doorDescendantRemConn = nil end
-        if buttonLabelMap[DoorBtn] then buttonLabelMap[DoorBtn].Text = "Ativar ESP Doors" end
     end
 end)
 
--- Freeze Pods button
+-- Freeze Pods toggle
 FreezeBtn.MouseButton1Click:Connect(function()
     FreezePodsActive = not FreezePodsActive
     if FreezePodsActive then
@@ -720,16 +859,27 @@ FreezeBtn.MouseButton1Click:Connect(function()
         RefreshFreezePods()
         if not podDescendantAddConn then podDescendantAddConn = Workspace.DescendantAdded:Connect(onPodDescendantAdded) end
         if not podDescendantRemConn then podDescendantRemConn = Workspace.DescendantRemoving:Connect(onPodDescendantRemoving) end
-        if buttonLabelMap[FreezeBtn] then buttonLabelMap[FreezeBtn].Text = "Desativar Freeze Pods" end
     else
         FreezeIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220)
         for m,_ in pairs(podHighlights) do RemoveFreezePodHighlight(m) end
         if podDescendantAddConn then pcall(function() podDescendantAddConn:Disconnect() end); podDescendantAddConn = nil end
         if podDescendantRemConn then pcall(function() podDescendantRemConn:Disconnect() end); podDescendantRemConn = nil end
-        if buttonLabelMap[FreezeBtn] then buttonLabelMap[FreezeBtn].Text = "Ativar Freeze Pods" end
     end
 end)
 
+-- Remove players Textures toggle
+RemoveTexBtn.MouseButton1Click:Connect(function()
+    GraySkinActive = not GraySkinActive
+    if GraySkinActive then RemoveTexIndicator.BackgroundColor3 = Color3.fromRGB(200,200,200); enableGraySkin()
+    else RemoveTexIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220); disableGraySkin() end
+end)
+
+-- Textures Brick toggle
+TextureBtn.MouseButton1Click:Connect(function()
+    if not TextureActive then enableTextureToggle() else disableTextureToggle() end
+end)
+
+-- Down timer toggle
 DownTimerBtn.MouseButton1Click:Connect(function()
     DownTimerActive = not DownTimerActive
     if DownTimerActive then DownIndicator.BackgroundColor3 = Color3.fromRGB(255,200,90)
@@ -745,16 +895,6 @@ DownTimerBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-GraySkinBtn.MouseButton1Click:Connect(function()
-    GraySkinActive = not GraySkinActive
-    if GraySkinActive then GraySkinIndicator.BackgroundColor3 = Color3.fromRGB(200,200,200); enableGraySkin()
-    else GraySkinIndicator.BackgroundColor3 = Color3.fromRGB(90,160,220); disableGraySkin() end
-end)
-
-TextureBtn.MouseButton1Click:Connect(function()
-    if not TextureActive then enableTextureToggle() else disableTextureToggle() end
-end)
-
 -- Cleanup on unload (best effort)
 local function cleanupAll()
     if TextureActive then disableTextureToggle() end
@@ -768,7 +908,7 @@ local function cleanupAll()
     for p,conn in pairs(ragdollConnects) do pcall(function() conn:Disconnect() end); ragdollConnects[p]=nil end
     for p,_ in pairs(ragdollBillboards) do removeRagdollBillboard(p) end
     for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end
-    -- restore any textures still in backup
+    -- restore textures
     if next(textureBackup) ~= nil then restoreTextures() end
     -- disconnect workspace listeners
     if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn = nil end
@@ -790,5 +930,4 @@ Players.PlayerRemoving:Connect(function(p)
     if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p] = nil end
 end)
 
--- Done: all features wired
-print("[FTF_ESP] Loaded successfully")
+print("[FTF_ESP] Loaded successfully (new UI)")
