@@ -1,12 +1,9 @@
--- FTF ESP Script — ajustes solicitados
--- Alterações principais:
---  - Removei o botão rápido "Teleport" ao lado da search (conforme pedido).
---  - Removi a janela externa de Teleport (agora Teleport é apenas uma aba no menu, ajustada para caber).
---  - Adicionei "Snow texture" na aba Textures como toggle (ativa/desativa).
---     - Ao ativar: altera BaseParts e Lighting como no script que você forneceu; salva backups.
---     - Ao desativar: restaura propriedades salvas e restaura Skies removidos.
---  - A lista de Teleport (aba Teleport) já é dinâmica e atualiza quando alguém entra/sai.
---  - Garantia: nada do Teleport ficará maior que o menu — tudo dentro da aba.
+-- FTF ESP Script — fixes: toggles properly toggle off, ragdoll timer no longer auto-activates
+-- Changes:
+--  - createToggleItem callback fixed so it calls the category toggle properly and updates visuals from the real state
+--  - attachRagdollListenerToPlayer / ragdoll changed handler respect DownTimerActive (billboards only created when timer is enabled)
+--  - ensured no automatic enabling of DownTimerActive at startup
+--  - small defensive pcall usage adjustments
 
 -- Services
 local UIS = game:GetService("UserInputService")
@@ -31,10 +28,10 @@ GUI.IgnoreGuiInset = true
 pcall(function() GUI.Parent = CoreGui end)
 if not GUI.Parent or GUI.Parent ~= CoreGui then GUI.Parent = PlayerGui end
 
--- =====================================================================
--- CORE LOGIC (ESP, Computers, Doors, Freeze Pods, Timers, Texture)
--- (kept similar to previous version)
--- =====================================================================
+-- ---------------------------------------------------------------------
+-- Core features (ESP, Computer ESP, Doors, Freeze Pods, Down Timer, Textures, Snow)
+-- (kept from previous version with fixes)
+-- ---------------------------------------------------------------------
 
 -- PLAYER ESP
 local PlayerESPActive = false
@@ -79,7 +76,7 @@ local function RefreshPlayerESP()
         if PlayerESPActive then AddPlayerHighlight(p); AddNameTag(p) else RemovePlayerHighlight(p); RemoveNameTag(p) end
     end
 end
-Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() wait(0.08); if PlayerESPActive then AddPlayerHighlight(p); AddNameTag(p) end end) end)
+Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() task.wait(0.08); if PlayerESPActive then AddPlayerHighlight(p); AddNameTag(p) end end) end)
 Players.PlayerRemoving:Connect(function(p) RemovePlayerHighlight(p); RemoveNameTag(p) end)
 RunService.RenderStepped:Connect(function()
     if PlayerESPActive then
@@ -226,7 +223,7 @@ local function onPodDescendantRemoving(desc)
     elseif desc and desc:IsA("BasePart") then local mdl = desc:FindFirstAncestorWhichIsA("Model"); if mdl and isFreezePodModel(mdl) then RemoveFreezePodHighlight(mdl) end end
 end
 
--- DOWN TIMER
+-- DOWN TIMER (does NOT auto-create billboards unless enabled)
 local DownTimerActive = false
 local DOWN_TIME = 28
 local ragdollBillboards = {}
@@ -280,22 +277,46 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
 local function attachRagdollListenerToPlayer(player)
-    if ragdollConnects[player] then pcall(function() ragdollConnects[player]:Disconnect() end) end
+    -- disconnect old if any
+    if ragdollConnects[player] then
+        pcall(function() ragdollConnects[player]:Disconnect() end)
+        ragdollConnects[player] = nil
+    end
     task.spawn(function()
         local ok, tempStats = pcall(function() return player:WaitForChild("TempPlayerStatsModule", 8) end)
         if not ok or not tempStats then return end
         local ok2, ragdoll = pcall(function() return tempStats:WaitForChild("Ragdoll", 8) end)
         if not ok2 or not ragdoll then return end
-        pcall(function() if ragdoll.Value then local info = createRagdollBillboardFor(player); if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(player, info.endTime) end end end)
-        local conn = ragdoll.Changed:Connect(function() pcall(function() if ragdoll.Value then local info = createRagdollBillboardFor(player); if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(player, info.endTime) end else removeRagdollBillboard(player) end end) end)
+        -- only create billboards when DownTimerActive is true
+        pcall(function()
+            if ragdoll.Value and DownTimerActive then
+                local info = createRagdollBillboardFor(player)
+                if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(player, info.endTime) end
+            end
+        end)
+        local conn = ragdoll.Changed:Connect(function()
+            pcall(function()
+                if ragdoll.Value then
+                    if DownTimerActive then
+                        local info = createRagdollBillboardFor(player)
+                        if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(player, info.endTime) end
+                    end
+                else
+                    -- ragdoll ended: remove billboard no matter DownTimerActive
+                    removeRagdollBillboard(player)
+                end
+            end)
+        end)
         ragdollConnects[player] = conn
     end)
 end
-Players.PlayerAdded:Connect(function(p) attachRagdollListenerToPlayer(p); p.CharacterAdded:Connect(function() wait(0.06); if ragdollBillboards[p] then removeRagdollBillboard(p); createRagdollBillboardFor(p) end end) end)
+
+Players.PlayerAdded:Connect(function(p) attachRagdollListenerToPlayer(p); p.CharacterAdded:Connect(function() task.wait(0.06); if ragdollBillboards[p] then removeRagdollBillboard(p); if DownTimerActive then createRagdollBillboardFor(p) end end end) end)
 for _,p in pairs(Players:GetPlayers()) do attachRagdollListenerToPlayer(p) end
 
--- GRAY SKIN (Remove players Textures)
+-- GRAY SKIN
 local GraySkinActive = false
 local skinBackup = {}
 local grayConns = {}
@@ -337,11 +358,11 @@ local function enableGraySkin()
     for _,p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then applyGrayToCharacter(p) end
         if not grayConns[p] then
-            grayConns[p] = p.CharacterAdded:Connect(function() wait(0.06); if GraySkinActive then applyGrayToCharacter(p) end end)
+            grayConns[p] = p.CharacterAdded:Connect(function() task.wait(0.06); if GraySkinActive then applyGrayToCharacter(p) end end)
         end
     end
     if not grayConns._playerAddedConn then
-        grayConns._playerAddedConn = Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer and GraySkinActive then if p.Character then applyGrayToCharacter(p) end; if not grayConns[p] then grayConns[p] = p.CharacterAdded:Connect(function() wait(0.06); if GraySkinActive then applyGrayToCharacter(p) end end) end end end)
+        grayConns._playerAddedConn = Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer and GraySkinActive then if p.Character then applyGrayToCharacter(p) end; if not grayConns[p] then grayConns[p] = p.CharacterAdded:Connect(function() task.wait(0.06); if GraySkinActive then applyGrayToCharacter(p) end end) end end end)
     end
 end
 local function disableGraySkin()
@@ -352,7 +373,7 @@ local function disableGraySkin()
 end
 Players.PlayerRemoving:Connect(function(p) if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p]=nil end; if grayConns[p] then pcall(function() grayConns[p]:Disconnect() end); grayConns[p]=nil end end)
 
--- WHITE BRICK TEXTURE (existing)
+-- WHITE BRICK TEXTURE
 local TextureActive = false
 local textureBackup = {}
 local textureDescendantConn = nil
@@ -417,17 +438,13 @@ local function disableTextureToggle()
     task.spawn(restoreTextures)
 end
 
--- =====================================================================
--- SNOW TEXTURE (new)
--- - runs the provided code, but saves backups so it can be toggled off
--- =====================================================================
+-- SNOW TEXTURE
 local SnowActive = false
-local snowBackupParts = {}      -- [part] = {Color, Material}
+local snowBackupParts = {}
 local snowPartConn = nil
-local snowLightingBackup = nil  -- table of lighting properties
-local snowSkyBackup = {}        -- original Sky instances (clones saved)
+local snowLightingBackup = nil
+local snowSkyBackup = {}
 local createdSnowSky = nil
-
 local function backupLighting()
     local ok, amb = pcall(function() return Lighting.Ambient end)
     local ok2, outAmb = pcall(function() return Lighting.OutdoorAmbient end)
@@ -448,7 +465,6 @@ local function backupLighting()
         EnvironmentSpecularScale = (ok8 and envSpec) or nil,
     }
 end
-
 local function restoreLighting()
     if not snowLightingBackup then return end
     pcall(function() if snowLightingBackup.Ambient then Lighting.Ambient = snowLightingBackup.Ambient end end)
@@ -461,20 +477,16 @@ local function restoreLighting()
     pcall(function() if snowLightingBackup.EnvironmentSpecularScale then Lighting.EnvironmentSpecularScale = snowLightingBackup.EnvironmentSpecularScale end end)
     snowLightingBackup = nil
 end
-
 local function enableSnowTexture()
     if SnowActive then return end
     SnowActive = true
-    -- backup lighting
     backupLighting()
-    -- backup existing Sky instances (clone them)
     for _,v in pairs(Lighting:GetChildren()) do
         if v:IsA("Sky") then
             pcall(function() table.insert(snowSkyBackup, v:Clone()) end)
             pcall(function() v:Destroy() end)
         end
     end
-    -- apply to all existing BaseParts
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
             local okC, col = pcall(function() return obj.Color end)
@@ -485,7 +497,6 @@ local function enableSnowTexture()
             pcall(function() obj.Color = Color3.new(1,1,1); obj.Material = Enum.Material.SmoothPlastic end)
         end
     end
-    -- adjust lighting
     pcall(function()
         Lighting.Ambient = Color3.new(1,1,1)
         Lighting.OutdoorAmbient = Color3.new(1,1,1)
@@ -496,17 +507,10 @@ local function enableSnowTexture()
         Lighting.EnvironmentDiffuseScale = 1
         Lighting.EnvironmentSpecularScale = 1
     end)
-    -- create an empty sky like your script
     local sky = Instance.new("Sky")
-    sky.SkyboxBk = ""
-    sky.SkyboxDn = ""
-    sky.SkyboxFt = ""
-    sky.SkyboxLf = ""
-    sky.SkyboxRt = ""
-    sky.SkyboxUp = ""
+    sky.SkyboxBk = ""; sky.SkyboxDn = ""; sky.SkyboxFt = ""; sky.SkyboxLf = ""; sky.SkyboxRt = ""; sky.SkyboxUp = ""
     sky.Parent = Lighting
     createdSnowSky = sky
-    -- connect to future added parts to apply snow (and backup their original props)
     snowPartConn = Workspace.DescendantAdded:Connect(function(desc)
         if not SnowActive then return end
         if desc and desc:IsA("BasePart") then
@@ -519,13 +523,10 @@ local function enableSnowTexture()
         end
     end)
 end
-
 local function disableSnowTexture()
     if not SnowActive then return end
     SnowActive = false
-    -- disconnect descendants connection
     if snowPartConn then pcall(function() snowPartConn:Disconnect() end); snowPartConn = nil end
-    -- restore parts
     for part, props in pairs(snowBackupParts) do
         if part and part.Parent then
             pcall(function()
@@ -535,23 +536,16 @@ local function disableSnowTexture()
         end
     end
     snowBackupParts = {}
-    -- remove created snow sky
     if createdSnowSky and createdSnowSky.Parent then pcall(function() createdSnowSky:Destroy() end) end
     createdSnowSky = nil
-    -- restore previous skies
-    for _,cloneSky in ipairs(snowSkyBackup) do
-        if cloneSky then
-            pcall(function() cloneSky.Parent = Lighting end)
-        end
-    end
+    for _,cloneSky in ipairs(snowSkyBackup) do if cloneSky then pcall(function() cloneSky.Parent = Lighting end) end end
     snowSkyBackup = {}
-    -- restore lighting
     restoreLighting()
 end
 
--- =====================================================================
--- UI: organized menu (Lemon-like). Teleport tab lives inside the menu.
--- =====================================================================
+-- ---------------------------------------------------------------------
+-- UI: organized menu — fixed toggle behavior and DownTimer creation
+-- ---------------------------------------------------------------------
 
 local MENU_WIDTH = 420
 local MENU_HEIGHT = 360
@@ -581,13 +575,13 @@ TitleLbl.Position = UDim2.new(0,12,0,12)
 TitleLbl.Size = UDim2.new(0,220,0,24)
 TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
 
--- Search box (blank placeholder)
+-- Search box (blank)
 local SearchBox = Instance.new("TextBox", TitleBar)
 SearchBox.Size = UDim2.new(0, 180, 0, 28)
 SearchBox.Position = UDim2.new(1, -188, 0, 10)
 SearchBox.BackgroundColor3 = Color3.fromRGB(26,26,26)
 SearchBox.TextColor3 = Color3.fromRGB(200,200,200)
-SearchBox.PlaceholderText = "" -- blank
+SearchBox.PlaceholderText = ""
 SearchBox.Text = ""
 SearchBox.ClearTextOnFocus = true
 local sbCorner = Instance.new("UICorner", SearchBox); sbCorner.CornerRadius = UDim.new(0,8)
@@ -642,7 +636,7 @@ contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScroll.CanvasSize = UDim2.new(0,0,0, contentLayout.AbsoluteContentSize.Y + 18)
 end)
 
--- Toggle item creator
+-- createToggleItem: fixed to call toggle handler without passing oldState and then read real state
 local function createToggleItem(parent, labelText, initial, callback)
     local item = Instance.new("Frame", parent)
     item.Size = UDim2.new(0.95, 0, 0, 44)
@@ -689,15 +683,18 @@ local function createToggleItem(parent, labelText, initial, callback)
     end
 
     sw.MouseButton1Click:Connect(function()
+        -- call provided callback (which should flip the underlying state)
+        pcall(function() callback() end)
+        -- read new state from external getter via callback return convention if provided,
+        -- but safer: let caller pass a function to setVisual after toggle (we do that in buildCategory)
+        -- here simply toggle visual optimistically and rely on buildCategory to refresh when needed
         updateVisual(not state)
-        pcall(function() callback(state) end) -- pass old state
     end)
 
     updateVisual(state)
     return item, function(newState) updateVisual(newState) end, function() return state end, lbl
 end
 
--- Button item (for teleport entries)
 local function createButtonItem(parent, labelText, buttonText, callback)
     local item = Instance.new("Frame", parent)
     item.Size = UDim2.new(0.95, 0, 0, 44)
@@ -736,27 +733,45 @@ end
 -- Categories mapping
 local Categories = {
     ["ESP"] = {
-        { label = "ESP Players",      get = function() return PlayerESPActive end,    toggle = function(_) PlayerESPActive = not PlayerESPActive; RefreshPlayerESP(); end },
-        { label = "ESP PCs",          get = function() return ComputerESPActive end, toggle = function(_) ComputerESPActive = not ComputerESPActive; RefreshComputerESP(); end },
-        { label = "ESP Freeze Pods",  get = function() return FreezePodsActive end,   toggle = function(_) FreezePodsActive = not FreezePodsActive; RefreshFreezePods(); end },
-        { label = "ESP Exit Doors",   get = function() return DoorESPActive end,     toggle = function(_) DoorESPActive = not DoorESPActive; if DoorESPActive then RefreshDoorESP(); if not doorDescendantAddConn then doorDescendantAddConn = Workspace.DescendantAdded:Connect(onDoorDescendantAdded) end; if not doorDescendantRemConn then doorDescendantRemConn = Workspace.DescendantRemoving:Connect(onDoorDescendantRemoving) end else for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end; if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn=nil end; if doorDescendantRemConn then pcall(function() doorDescendantRemConn:Disconnect() end); doorDescendantRemConn=nil end end end },
+        { label = "ESP Players",      get = function() return PlayerESPActive end,    toggle = function() PlayerESPActive = not PlayerESPActive; RefreshPlayerESP(); end },
+        { label = "ESP PCs",          get = function() return ComputerESPActive end, toggle = function() ComputerESPActive = not ComputerESPActive; RefreshComputerESP(); end },
+        { label = "ESP Freeze Pods",  get = function() return FreezePodsActive end,   toggle = function() FreezePodsActive = not FreezePodsActive; RefreshFreezePods(); end },
+        { label = "ESP Exit Doors",   get = function() return DoorESPActive end,     toggle = function() DoorESPActive = not DoorESPActive; if DoorESPActive then RefreshDoorESP(); if not doorDescendantAddConn then doorDescendantAddConn = Workspace.DescendantAdded:Connect(onDoorDescendantAdded) end; if not doorDescendantRemConn then doorDescendantRemConn = Workspace.DescendantRemoving:Connect(onDoorDescendantRemoving) end else for m,_ in pairs(doorHighlights) do RemoveDoorHighlight(m) end; if doorDescendantAddConn then pcall(function() doorDescendantAddConn:Disconnect() end); doorDescendantAddConn=nil end; if doorDescendantRemConn then pcall(function() doorDescendantRemConn:Disconnect() end); doorDescendantRemConn=nil end end end },
     },
     ["Textures"] = {
-        { label = "Remove players Textures", get = function() return GraySkinActive end, toggle = function(_) GraySkinActive = not GraySkinActive; if GraySkinActive then enableGraySkin() else disableGraySkin() end end },
-        { label = "Ativar Textures Tijolos Brancos", get = function() return TextureActive end, toggle = function(_) if not TextureActive then enableTextureToggle() else disableTextureToggle() end end },
-        { label = "Snow texture", get = function() return SnowActive end, toggle = function(_) if not SnowActive then enableSnowTexture() else disableSnowTexture() end end },
+        { label = "Remove players Textures", get = function() return GraySkinActive end, toggle = function() GraySkinActive = not GraySkinActive; if GraySkinActive then enableGraySkin() else disableGraySkin() end end },
+        { label = "Ativar Textures Tijolos Brancos", get = function() return TextureActive end, toggle = function() if not TextureActive then enableTextureToggle() else disableTextureToggle() end end },
+        { label = "Snow texture", get = function() return SnowActive end, toggle = function() if not SnowActive then enableSnowTexture() else disableSnowTexture() end end },
     },
     ["Timers"] = {
-        { label = "Ativar Contador de Down", get = function() return DownTimerActive end, toggle = function(_) DownTimerActive = not DownTimerActive; if not DownTimerActive then for p,_ in pairs(ragdollBillboards) do if ragdollBillboards[p] then removeRagdollBillboard(p) end end; for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end else for _,p in pairs(Players:GetPlayers()) do local ok, temp = pcall(function() return p:FindFirstChild("TempPlayerStatsModule") end); if ok and temp then local rag = temp:FindFirstChild("Ragdoll"); if rag and rag.Value then attachRagdollListenerToPlayer(p); end end end end end },
+        { label = "Ativar Contador de Down", get = function() return DownTimerActive end, toggle = function()
+            DownTimerActive = not DownTimerActive
+            if DownTimerActive then
+                -- attach listeners and create billboards only when ragdoll true
+                for _,p in pairs(Players:GetPlayers()) do
+                    local ok, temp = pcall(function() return p:FindFirstChild("TempPlayerStatsModule") end)
+                    if ok and temp then
+                        local rag = temp:FindFirstChild("Ragdoll")
+                        if rag and rag.Value then
+                            -- create billboard only when enabled
+                            local info = createRagdollBillboardFor(p)
+                            if info then info.endTime = tick() + DOWN_TIME; updateBottomRightFor(p, info.endTime) end
+                        end
+                    end
+                end
+            else
+                -- cleanup billboards and bottom UI
+                for p,_ in pairs(ragdollBillboards) do if ragdollBillboards[p] then removeRagdollBillboard(p) end end
+                for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end
+            end
+        end },
     },
 }
 
--- Build content
+-- Build content for a category (Teleport handled specially)
 local currentCategory = "ESP"
 local function clearContent()
-    for _,v in pairs(ContentScroll:GetChildren()) do
-        if v:IsA("Frame") then v:Destroy() end
-    end
+    for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
 end
 
 local function buildCategory(name, filter)
@@ -765,7 +780,7 @@ local function buildCategory(name, filter)
     if name == "Teleport" then
         local order = 1
         local players = Players:GetPlayers()
-        table.sort(players, function(a,b) return ( (a.DisplayName or ""):lower()..a.Name:lower()) < ((b.DisplayName or ""):lower()..b.Name:lower()) end)
+        table.sort(players, function(a,b) return ((a.DisplayName or ""):lower()..a.Name:lower()) < ((b.DisplayName or ""):lower()..b.Name:lower()) end)
         for _,pl in ipairs(players) do
             if pl ~= LocalPlayer then
                 local display = (pl.DisplayName or pl.Name) .. " (" .. pl.Name .. ")"
@@ -789,13 +804,15 @@ local function buildCategory(name, filter)
         local order = 1
         for _,entry in ipairs(items) do
             if filter == "" or entry.label:lower():find(filter) then
-                local state = false
-                pcall(function() state = entry.get() end)
-                local item, setVisual = createToggleItem(ContentScroll, entry.label, state, function(oldState)
-                    pcall(function() entry.toggle(oldState) end)
-                    local newState = nil
-                    pcall(function() newState = entry.get() end)
-                    if newState ~= nil then setVisual(newState) end
+                local ok, state = pcall(function() return entry.get() end)
+                state = ok and state or false
+                -- pass a callback that toggles the underlying state (entry.toggle) and then refresh visual using entry.get()
+                local item, setVisual = createToggleItem(ContentScroll, entry.label, state, function()
+                    -- call toggle
+                    pcall(function() entry.toggle() end)
+                    -- read actual state and update visual
+                    local ok2, newState = pcall(function() return entry.get() end)
+                    if ok2 and setVisual then pcall(function() setVisual(newState) end) end
                 end)
                 item.LayoutOrder = order
                 order = order + 1
@@ -817,18 +834,12 @@ TabTextures.MouseButton1Click:Connect(function() currentCategory = "Textures"; s
 TabTimers.MouseButton1Click:Connect(function() currentCategory = "Timers"; setActiveTabVisual(TabTimers); buildCategory("Timers", SearchBox.Text) end)
 TabTeleport.MouseButton1Click:Connect(function() currentCategory = "Teleport"; setActiveTabVisual(TabTeleport); buildCategory("Teleport", SearchBox.Text) end)
 
--- Search behavior (filters current tab)
-SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-    buildCategory(currentCategory, SearchBox.Text)
-end)
+-- Search behavior
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function() buildCategory(currentCategory, SearchBox.Text) end)
 
 -- Ensure Teleport tab updates when players join/leave
-Players.PlayerAdded:Connect(function()
-    if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end
-end)
-Players.PlayerRemoving:Connect(function()
-    if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end
-end)
+Players.PlayerAdded:Connect(function() if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end end)
+Players.PlayerRemoving:Connect(function() if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end end)
 
 -- initial build
 setActiveTabVisual(TabESP)
@@ -853,9 +864,7 @@ end)
 local menuOpen = false
 UIS.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then menuOpen = not menuOpen; MainFrame.Visible = menuOpen end end)
 
--- =====================================================================
--- Cleanup function (ensure snow and other listeners are cleaned)
--- =====================================================================
+-- Cleanup function
 local function cleanupAll()
     if TextureActive then disableTextureToggle() end
     if GraySkinActive then disableGraySkin() end
@@ -891,4 +900,4 @@ Players.PlayerRemoving:Connect(function(p)
     if currentCategory == "Teleport" then task.delay(0.05, function() buildCategory("Teleport", SearchBox.Text) end) end
 end)
 
-print("[FTF_ESP] Atualizado: removido quick-teleport, Teleport dentro do menu, Snow texture adicionada")
+print("[FTF_ESP] Fixes applied: toggles fixed, ragdoll timer won't auto-create unless enabled")
