@@ -1,12 +1,9 @@
---[[
-FTF ESP Script — consolidated fixed version
-- Repaired full feature set so everything runs together (ESP, ComputerESP, Ragdoll timer, GraySkin, Texture toggle).
-- Texture toggle is safe (skips player characters & processes in batches) and is toggleable on/off.
-- Button labels update correctly and UI references are consistent.
-- Uses task.spawn / Heartbeat yields to keep the game responsive.
-- Copy this file to your repo replacing the previous one, then load with:
-  loadstring(game:HttpGet("https://raw.githubusercontent.com/1D4vid/ftf_esp_script.lua/main/ftf_esp_script.lua", true))()
-]]
+-- FTF ESP Script — consolidated fixed version (patched)
+-- Ajustes:
+--  - Highlights parentados para Workspace (eles não pertencem a ScreenGui)
+--  - Desconexão de ragdollConnects e limpeza de ragdollBillboards / bottomUI em PlayerRemoving
+--  - Melhor cleanupAll para limpar texturas/skins/highlights
+--  - Pequena reorganização e comentários
 
 -- Services
 local UIS = game:GetService("UserInputService")
@@ -229,11 +226,13 @@ local function AddPlayerHighlight(player)
     if playerHighlights[player] then playerHighlights[player]:Destroy(); playerHighlights[player]=nil end
     local fill, outline = HighlightColorForPlayer(player)
     local h = Instance.new("Highlight")
-    h.Name = "[FTF_ESP_PlayerAura_DAVID]"; h.Adornee = player.Character; h.Parent = GUI
+    h.Name = "[FTF_ESP_PlayerAura_DAVID]"; h.Adornee = player.Character
+    -- Important: Highlight is not a GUI element, parent to Workspace so it renders correctly
+    h.Parent = Workspace
     h.FillColor = fill; h.OutlineColor = outline; h.FillTransparency = 0.19; h.OutlineTransparency = 0.08
     playerHighlights[player] = h
 end
-local function RemovePlayerHighlight(player) if playerHighlights[player] then playerHighlights[player]:Destroy(); playerHighlights[player]=nil end end
+local function RemovePlayerHighlight(player) if playerHighlights[player] then pcall(function() playerHighlights[player]:Destroy() end); playerHighlights[player]=nil end end
 
 local function AddNameTag(player)
     if player==LocalPlayer then return end
@@ -248,7 +247,7 @@ local function AddNameTag(player)
     text.Text = player.DisplayName or player.Name
     NameTags[player] = billboard
 end
-local function RemoveNameTag(player) if NameTags[player] then NameTags[player]:Destroy(); NameTags[player]=nil end end
+local function RemoveNameTag(player) if NameTags[player] then pcall(function() NameTags[player]:Destroy() end); NameTags[player]=nil end end
 
 local function RefreshPlayerESP()
     for _,p in pairs(Players:GetPlayers()) do
@@ -295,13 +294,15 @@ end
 local function AddComputerHighlight(model)
     if not isComputerModel(model) then return end
     if compHighlights[model] then compHighlights[model]:Destroy(); compHighlights[model]=nil end
-    local h = Instance.new("Highlight", GUI)
+    local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_ComputerAura_DAVID]"; h.Adornee = model
+    -- Parent highlight to Workspace so it displays properly
+    h.Parent = Workspace
     h.FillColor = getPcColor(model); h.OutlineColor = Color3.fromRGB(210,210,210)
     h.FillTransparency = 0.14; h.OutlineTransparency = 0.08
     compHighlights[model] = h
 end
-local function RemoveComputerHighlight(model) if compHighlights[model] then compHighlights[model]:Destroy(); compHighlights[model]=nil end end
+local function RemoveComputerHighlight(model) if compHighlights[model] then pcall(function() compHighlights[model]:Destroy() end); compHighlights[model]=nil end end
 local function RefreshComputerESP()
     for m,h in pairs(compHighlights) do if h then h:Destroy() end end; compHighlights = {}
     if not ComputerESPActive then return end
@@ -351,7 +352,9 @@ RunService.Heartbeat:Connect(function()
     if not DownTimerActive then return end
     local now = tick()
     for player, info in pairs(ragdollBillboards) do
-        if not player or not player.Parent or not info or not info.gui then removeRagdollBillboard(player); if bottomUI[player] then if bottomUI[player].screenGui and bottomUI[player].screenGui.Parent then bottomUI[player].screenGui:Destroy() end bottomUI[player]=nil end
+        if not player or not player.Parent or not info or not info.gui then
+            removeRagdollBillboard(player)
+            if bottomUI[player] then if bottomUI[player].screenGui and bottomUI[player].screenGui.Parent then bottomUI[player].screenGui:Destroy() end bottomUI[player]=nil end
         else
             local remaining = info.endTime - now
             if remaining <= 0 then removeRagdollBillboard(player); if bottomUI[player] then if bottomUI[player].screenGui and bottomUI[player].screenGui.Parent then bottomUI[player].screenGui:Destroy() end bottomUI[player]=nil end
@@ -385,7 +388,7 @@ local skinBackup = {}
 local grayConns = {}
 
 local function storePartOriginal(part, store)
-    if not part or not part:IsA("BasePart") and not part:IsA("MeshPart") then return end
+    if not part or (not part:IsA("BasePart") and not part:IsA("MeshPart")) then return end
     if store[part] then return end
     local okC, col = pcall(function() return part.Color end)
     local okM, mat = pcall(function() return part.Material end)
@@ -563,6 +566,13 @@ local function cleanupAll()
     if GraySkinActive then disableGraySkin() end
     for p,_ in pairs(playerHighlights) do RemovePlayerHighlight(p) end
     for p,_ in pairs(NameTags) do RemoveNameTag(p) end
+    for m,_ in pairs(compHighlights) do RemoveComputerHighlight(m) end
+    -- disconnect ragdoll listeners and remove billboards
+    for p,conn in pairs(ragdollConnects) do pcall(function() conn:Disconnect() end); ragdollConnects[p]=nil end
+    for p,_ in pairs(ragdollBillboards) do removeRagdollBillboard(p) end
+    for p,_ in pairs(bottomUI) do if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p]=nil end
+    -- restore any textures still in backup
+    if next(textureBackup) ~= nil then restoreTextures() end
 end
 
 -- Bind PlayerRemoving to cleanup for players
@@ -570,6 +580,10 @@ Players.PlayerRemoving:Connect(function(p)
     if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p]=nil end
     if playerHighlights[p] then RemovePlayerHighlight(p) end
     if NameTags[p] then RemoveNameTag(p) end
+    if ragdollConnects[p] then pcall(function() ragdollConnects[p]:Disconnect() end); ragdollConnects[p]=nil end
+    if ragdollBillboards[p] then removeRagdollBillboard(p) end
+    if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p] = nil
+    if compHighlights[p] then RemoveComputerHighlight(p) end
 end)
 
 -- Done: all features wired
