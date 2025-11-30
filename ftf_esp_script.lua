@@ -1,9 +1,8 @@
--- FTF ESP Script — UI redesenhada (layout organizado tipo Lemon HUB)
--- - Menu deitado, arredondado, com abas
--- - Conteúdo em ScrollingFrame vertical (cada opção é uma linha com toggle)
--- - Sistema de pesquisa que filtra opções na aba atual
--- - Teleport mantido (janela separada)
--- Mantive a lógica dos ESPs, Textures e Timers do script anterior.
+-- FTF ESP Script — ajustes: search vazio + Teleport como categoria dinâmica
+-- - SearchBox sem texto/placeholder por padrão
+-- - Aba "Teleport" adicionada com lista de todos os jogadores (atualiza automaticamente)
+-- - Quick button renomeado para "Teleport" (mantido, abre a janela de Teleport externa)
+-- Mantive a lógica do ESP / Textures / Timers já existente
 
 -- Services
 local UIS = game:GetService("UserInputService")
@@ -14,10 +13,9 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- Root GUI
+-- UI root
 local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-
--- cleanup previous
+-- cleanup old
 for _,v in pairs(CoreGui:GetChildren()) do if v.Name=="FTF_ESP_GUI_DAVID" then v:Destroy() end end
 for _,v in pairs(PlayerGui:GetChildren()) do if v.Name=="FTF_ESP_GUI_DAVID" then v:Destroy() end end
 
@@ -29,8 +27,7 @@ pcall(function() GUI.Parent = CoreGui end)
 if not GUI.Parent or GUI.Parent ~= CoreGui then GUI.Parent = PlayerGui end
 
 -- =====================================================================
--- Functionality (ESP, Textures, Timers) - preserved from original script
--- I'll keep these implementations mostly unchanged and only reference state vars
+-- (Kept logic: ESPs, Textures, Timers) - unchanged core implementations
 -- =====================================================================
 
 -- PLAYER ESP
@@ -45,7 +42,7 @@ end
 local function AddPlayerHighlight(player)
     if player == LocalPlayer then return end
     if not player.Character then return end
-    if playerHighlights[player] then playerHighlights[player]:Destroy() end
+    if playerHighlights[player] then pcall(function() playerHighlights[player]:Destroy() end) end
     local fill, outline = HighlightColorForPlayer(player)
     local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_PlayerAura_DAVID]"; h.Adornee = player.Character
@@ -59,7 +56,7 @@ local function RemovePlayerHighlight(player) if playerHighlights[player] then pc
 local function AddNameTag(player)
     if player==LocalPlayer then return end
     if not player.Character or not player.Character:FindFirstChild("Head") then return end
-    if NameTags[player] then NameTags[player]:Destroy() end
+    if NameTags[player] then pcall(function() NameTags[player]:Destroy() end) end
     local billboard = Instance.new("BillboardGui", GUI)
     billboard.Name = "[FTFName]"; billboard.Adornee = player.Character.Head
     billboard.Size = UDim2.new(0,110,0,20); billboard.StudsOffset = Vector3.new(0,2.18,0); billboard.AlwaysOnTop = true
@@ -111,7 +108,7 @@ local function getPcColor(model)
 end
 local function AddComputerHighlight(model)
     if not isComputerModel(model) then return end
-    if compHighlights[model] then compHighlights[model]:Destroy() end
+    if compHighlights[model] then pcall(function() compHighlights[model]:Destroy() end) end
     local h = Instance.new("Highlight")
     h.Name = "[FTF_ESP_ComputerAura_DAVID]"; h.Adornee = model
     h.Parent = Workspace
@@ -130,7 +127,7 @@ Workspace.DescendantAdded:Connect(function(obj) if ComputerESPActive and isCompu
 Workspace.DescendantRemoving:Connect(RemoveComputerHighlight)
 RunService.RenderStepped:Connect(function() if ComputerESPActive then for m,h in pairs(compHighlights) do if m and m.Parent and h and h.Parent then h.FillColor = getPcColor(m) end end end end)
 
--- DOOR ESP (SelectionBox amarelas)
+-- DOORS (SelectionBox)
 local DoorESPActive = false
 local doorHighlights = {}
 local doorDescendantAddConn, doorDescendantRemConn = nil, nil
@@ -158,7 +155,7 @@ local function getDoorPrimaryPart(model)
 end
 local function AddDoorHighlight(model)
     if not model or not isDoorModel(model) then return end
-    if doorHighlights[model] then doorHighlights[model]:Destroy() end
+    if doorHighlights[model] then pcall(function() doorHighlights[model]:Destroy() end) end
     local primary = getDoorPrimaryPart(model)
     if not primary then return end
     local box = Instance.new("SelectionBox")
@@ -201,7 +198,7 @@ local function isFreezePodModel(model)
 end
 local function AddFreezePodHighlight(model)
     if not model or not isFreezePodModel(model) then return end
-    if podHighlights[model] then podHighlights[model]:Destroy() end
+    if podHighlights[model] then pcall(function() podHighlights[model]:Destroy() end) end
     local h = Instance.new("Highlight"); h.Name = "[FTF_ESP_FreezePodAura_DAVID]"; h.Adornee = model; h.Parent = Workspace
     h.FillColor = Color3.fromRGB(255,100,100); h.OutlineColor = Color3.fromRGB(200,40,40)
     h.FillTransparency = 0.08; h.OutlineTransparency = 0.02; h.Enabled = true
@@ -292,7 +289,7 @@ end
 Players.PlayerAdded:Connect(function(p) attachRagdollListenerToPlayer(p); p.CharacterAdded:Connect(function() wait(0.06); if ragdollBillboards[p] then removeRagdollBillboard(p); createRagdollBillboardFor(p) end end) end)
 for _,p in pairs(Players:GetPlayers()) do attachRagdollListenerToPlayer(p) end
 
--- GRAY SKIN ("Remove players Textures")
+-- GRAY SKIN
 local GraySkinActive = false
 local skinBackup = {}
 local grayConns = {}
@@ -349,7 +346,7 @@ local function disableGraySkin()
 end
 Players.PlayerRemoving:Connect(function(p) if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p]=nil end; if grayConns[p] then pcall(function() grayConns[p]:Disconnect() end); grayConns[p]=nil end end)
 
--- TEXTURE (white bricks)
+-- TEXTURE
 local TextureActive = false
 local textureBackup = {}
 local textureDescendantConn = nil
@@ -415,10 +412,11 @@ local function disableTextureToggle()
 end
 
 -- =====================================================================
--- UI: organized menu like image — top horizontal rounded frame with tabs
+-- UI: organized menu like LemonHub example
+-- - SearchBox set to blank (no "TextBox" or placeholder)
+-- - Added Teleport tab which lists all players and updates automatically
 -- =====================================================================
 
--- Dimensions
 local MENU_WIDTH = 420
 local MENU_HEIGHT = 360
 
@@ -447,14 +445,15 @@ TitleLbl.Position = UDim2.new(0,12,0,12)
 TitleLbl.Size = UDim2.new(0,220,0,24)
 TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
 
--- Search box
+-- Search box (now blank by default)
 local SearchBox = Instance.new("TextBox", TitleBar)
 SearchBox.Size = UDim2.new(0, 180, 0, 28)
 SearchBox.Position = UDim2.new(1, -188, 0, 10)
 SearchBox.BackgroundColor3 = Color3.fromRGB(26,26,26)
 SearchBox.TextColor3 = Color3.fromRGB(200,200,200)
-SearchBox.PlaceholderText = "Pesquisar..."
-SearchBox.ClearTextOnFocus = false
+SearchBox.PlaceholderText = "" -- empty placeholder
+SearchBox.Text = "" -- ensure no default text
+SearchBox.ClearTextOnFocus = true
 local sbCorner = Instance.new("UICorner", SearchBox); sbCorner.CornerRadius = UDim.new(0,8)
 local sbPadding = Instance.new("UIPadding", SearchBox); sbPadding.PaddingLeft = UDim.new(0,10)
 
@@ -465,7 +464,7 @@ CloseBtn.BackgroundTransparency = 1; CloseBtn.Size = UDim2.new(0,36,0,36); Close
 CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
 CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
--- Tabs (pills)
+-- Tabs (pills) - added "Teleport" tab
 local TabsParent = Instance.new("Frame", MainFrame)
 TabsParent.Size = UDim2.new(1, -24, 0, 44)
 TabsParent.Position = UDim2.new(0,12,0,56)
@@ -473,7 +472,7 @@ TabsParent.BackgroundTransparency = 1
 
 local function createTab(name, x)
     local t = Instance.new("TextButton", TabsParent)
-    t.Size = UDim2.new(0, 120, 0, 34)
+    t.Size = UDim2.new(0, 100, 0, 34)
     t.Position = UDim2.new(0, x, 0, 4)
     t.Text = name
     t.Font = Enum.Font.GothamSemibold
@@ -486,8 +485,9 @@ local function createTab(name, x)
 end
 
 local TabESP = createTab("ESP", 0)
-local TabTextures = createTab("Textures", 132)
-local TabTimers = createTab("Timers", 264)
+local TabTextures = createTab("Textures", 114)
+local TabTimers = createTab("Timers", 228)
+local TabTeleport = createTab("Teleport", 342)
 
 -- Content ScrollingFrame
 local ContentScroll = Instance.new("ScrollingFrame", MainFrame)
@@ -502,13 +502,11 @@ local contentLayout = Instance.new("UIListLayout", ContentScroll)
 contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 contentLayout.Padding = UDim.new(0,10)
 contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
--- update canvas size when content changes
 contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScroll.CanvasSize = UDim2.new(0,0,0, contentLayout.AbsoluteContentSize.Y + 18)
 end)
 
--- toggle component creator (single line item with label and switch)
+-- toggle item creator (label + switch)
 local function createToggleItem(parent, labelText, initial, callback)
     local item = Instance.new("Frame", parent)
     item.Size = UDim2.new(0.95, 0, 0, 44)
@@ -516,7 +514,6 @@ local function createToggleItem(parent, labelText, initial, callback)
     item.BorderSizePixel = 0
     local itemCorner = Instance.new("UICorner", item); itemCorner.CornerRadius = UDim.new(0,10)
 
-    -- label
     local lbl = Instance.new("TextLabel", item)
     lbl.Size = UDim2.new(1, -120, 1, 0)
     lbl.Position = UDim2.new(0,12,0,0)
@@ -527,7 +524,6 @@ local function createToggleItem(parent, labelText, initial, callback)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.Text = labelText
 
-    -- switch container
     local sw = Instance.new("TextButton", item)
     sw.Size = UDim2.new(0,88,0,28)
     sw.Position = UDim2.new(1, -100, 0.5, -14)
@@ -543,17 +539,14 @@ local function createToggleItem(parent, labelText, initial, callback)
 
     local toggleDot = Instance.new("Frame", swBg)
     toggleDot.Size = UDim2.new(0,20,0,20)
-    toggleDot.Position = UDim2.new(initial and 1 or 0, -22, 0.5, -10)
+    toggleDot.Position = UDim2.new(initial and 1 or 0, initial and -22 or 2, 0.5, -10)
     toggleDot.BackgroundColor3 = initial and Color3.fromRGB(120,200,120) or Color3.fromRGB(180,180,180)
     local dotCorner = Instance.new("UICorner", toggleDot); dotCorner.CornerRadius = UDim.new(0,10)
 
-    -- state
     local state = initial or false
-
     local function updateVisual(s)
         state = s
-        -- animate dot and change color
-        local targetPos = (s) and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+        local targetPos = s and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
         TweenService:Create(toggleDot, TweenInfo.new(0.15), {Position = targetPos}):Play()
         toggleDot.BackgroundColor3 = s and Color3.fromRGB(120,200,120) or Color3.fromRGB(160,160,160)
         swBg.BackgroundColor3 = s and Color3.fromRGB(35,90,35) or Color3.fromRGB(60,60,60)
@@ -561,16 +554,50 @@ local function createToggleItem(parent, labelText, initial, callback)
 
     sw.MouseButton1Click:Connect(function()
         updateVisual(not state)
-        pcall(function() callback(state) end) -- pass old state (callback can toggle global)
+        pcall(function() callback(state) end) -- pass old state
     end)
 
-    -- initial visual
     updateVisual(state)
-
-    return item, function(newState) updateVisual(newState) end, function() return state end
+    return item, function(newState) updateVisual(newState) end, function() return state end, lbl
 end
 
--- Category definitions (mapping label => handler)
+-- button item creator (label + action button on right) — used for Teleport list
+local function createButtonItem(parent, labelText, buttonText, callback)
+    local item = Instance.new("Frame", parent)
+    item.Size = UDim2.new(0.95, 0, 0, 44)
+    item.BackgroundColor3 = Color3.fromRGB(28,28,28)
+    item.BorderSizePixel = 0
+    local itemCorner = Instance.new("UICorner", item); itemCorner.CornerRadius = UDim.new(0,10)
+
+    local lbl = Instance.new("TextLabel", item)
+    lbl.Size = UDim2.new(1, -120, 1, 0)
+    lbl.Position = UDim2.new(0,12,0,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(210,210,210)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = labelText
+
+    local btn = Instance.new("TextButton", item)
+    btn.Size = UDim2.new(0,88,0,28)
+    btn.Position = UDim2.new(1, -100, 0.5, -14)
+    btn.BackgroundColor3 = Color3.fromRGB(38,120,190)
+    btn.AutoButtonColor = false
+    local btnCorner = Instance.new("UICorner", btn); btnCorner.CornerRadius = UDim.new(0,12)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.fromRGB(240,240,240)
+    btn.Text = buttonText
+
+    btn.MouseButton1Click:Connect(function()
+        pcall(callback)
+    end)
+
+    return item, lbl, btn
+end
+
+-- Categories mapping for toggles (labels and handlers)
 local Categories = {
     ["ESP"] = {
         { label = "ESP Players",      get = function() return PlayerESPActive end,    toggle = function(_) PlayerESPActive = not PlayerESPActive; RefreshPlayerESP(); end },
@@ -587,50 +614,107 @@ local Categories = {
     },
 }
 
--- Build content for current category, with optional filter
+-- Build content for a category (supports Teleport special case)
 local currentCategory = "ESP"
-local activeToggles = {} -- store upgrade functions to set visual from external toggles
+local function clearContent()
+    for _,v in pairs(ContentScroll:GetChildren()) do
+        if v:IsA("Frame") then v:Destroy() end
+    end
+end
+
 local function buildCategory(name, filter)
     filter = (filter or ""):lower()
-    -- clear content
-    for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
-    activeToggles = {}
-    local items = Categories[name] or {}
-    local order = 1
-    for _,entry in ipairs(items) do
-        if filter == "" or entry.label:lower():find(filter) then
-            local state = false
-            pcall(function() state = entry.get() end)
-            local item, setVisual = createToggleItem(ContentScroll, entry.label, state, function(oldState)
-                -- call the toggle handler
-                pcall(function() entry.toggle(oldState) end)
-                -- update visuals to reflect new state
-                local newState = nil
-                pcall(function() newState = entry.get() end)
-                if newState ~= nil then setVisual(newState) end
-            end)
-            item.LayoutOrder = order
-            order = order + 1
-            activeToggles[entry.label] = setVisual
+    clearContent()
+    if name == "Teleport" then
+        -- build player list (excluding local player)
+        local order = 1
+        local players = Players:GetPlayers()
+        table.sort(players, function(a,b) return (a.DisplayName:lower()..a.Name:lower()) < (b.DisplayName:lower()..b.Name:lower()) end)
+        for _,pl in ipairs(players) do
+            if pl ~= LocalPlayer then
+                local display = (pl.DisplayName or pl.Name) .. " (" .. pl.Name .. ")"
+                if filter == "" or display:lower():find(filter) then
+                    local item, lbl, btn = createButtonItem(ContentScroll, display, "Teleport", function()
+                        local myChar = LocalPlayer.Character
+                        local targetChar = pl.Character
+                        if not myChar or not targetChar then return end
+                        local hrp = myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Torso") or myChar:FindFirstChild("UpperTorso")
+                        local thrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("UpperTorso")
+                        if not hrp or not thrp then return end
+                        pcall(function() hrp.CFrame = thrp.CFrame + Vector3.new(0,4,0) end)
+                    end)
+                    item.LayoutOrder = order
+                    order = order + 1
+                end
+            end
+        end
+    else
+        local items = Categories[name] or {}
+        local order = 1
+        for _,entry in ipairs(items) do
+            if filter == "" or entry.label:lower():find(filter) then
+                local state = false
+                pcall(function() state = entry.get() end)
+                local item, setVisual, getState, lbl = createToggleItem(ContentScroll, entry.label, state, function(oldState)
+                    pcall(function() entry.toggle(oldState) end)
+                    local newState = nil
+                    pcall(function() newState = entry.get() end)
+                    if newState ~= nil then setVisual(newState) end
+                end)
+                item.LayoutOrder = order
+                order = order + 1
+            end
         end
     end
 end
 
--- Tabs click handlers
-TabESP.MouseButton1Click:Connect(function() currentCategory = "ESP"; buildCategory("ESP", SearchBox.Text) TabESP.BackgroundColor3 = Color3.fromRGB(34,34,34); TabTextures.BackgroundColor3 = Color3.fromRGB(28,28,28); TabTimers.BackgroundColor3 = Color3.fromRGB(28,28,28) end)
-TabTextures.MouseButton1Click:Connect(function() currentCategory = "Textures"; buildCategory("Textures", SearchBox.Text) TabTextures.BackgroundColor3 = Color3.fromRGB(34,34,34); TabESP.BackgroundColor3 = Color3.fromRGB(28,28,28); TabTimers.BackgroundColor3 = Color3.fromRGB(28,28,28) end)
-TabTimers.MouseButton1Click:Connect(function() currentCategory = "Timers"; buildCategory("Timers", SearchBox.Text) TabTimers.BackgroundColor3 = Color3.fromRGB(34,34,34); TabESP.BackgroundColor3 = Color3.fromRGB(28,28,28); TabTextures.BackgroundColor3 = Color3.fromRGB(28,28,28) end)
+-- Tabs click handlers (visual feedback + build)
+local function setActiveTabVisual(activeTab)
+    TabESP.BackgroundColor3 = (activeTab == TabESP) and Color3.fromRGB(34,34,34) or Color3.fromRGB(28,28,28)
+    TabTextures.BackgroundColor3 = (activeTab == TabTextures) and Color3.fromRGB(34,34,34) or Color3.fromRGB(28,28,28)
+    TabTimers.BackgroundColor3 = (activeTab == TabTimers) and Color3.fromRGB(34,34,34) or Color3.fromRGB(28,28,28)
+    TabTeleport.BackgroundColor3 = (activeTab == TabTeleport) and Color3.fromRGB(34,34,34) or Color3.fromRGB(28,28,28)
+end
 
--- search behavior
+TabESP.MouseButton1Click:Connect(function()
+    currentCategory = "ESP"
+    setActiveTabVisual(TabESP)
+    buildCategory("ESP", SearchBox.Text)
+end)
+TabTextures.MouseButton1Click:Connect(function()
+    currentCategory = "Textures"
+    setActiveTabVisual(TabTextures)
+    buildCategory("Textures", SearchBox.Text)
+end)
+TabTimers.MouseButton1Click:Connect(function()
+    currentCategory = "Timers"
+    setActiveTabVisual(TabTimers)
+    buildCategory("Timers", SearchBox.Text)
+end)
+TabTeleport.MouseButton1Click:Connect(function()
+    currentCategory = "Teleport"
+    setActiveTabVisual(TabTeleport)
+    buildCategory("Teleport", SearchBox.Text)
+end)
+
+-- Search behavior (filters current tab content)
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
     buildCategory(currentCategory, SearchBox.Text)
 end)
 
--- initial build
-TabESP.BackgroundColor3 = Color3.fromRGB(34,34,34)
+-- Ensure Teleport tab updates when players join/leave (auto rebuild if Teleport active)
+Players.PlayerAdded:Connect(function()
+    if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end
+end)
+Players.PlayerRemoving:Connect(function()
+    if currentCategory == "Teleport" then task.delay(0.06, function() buildCategory("Teleport", SearchBox.Text) end) end
+end)
+
+-- initial view
+setActiveTabVisual(TabESP)
 buildCategory("ESP", "")
 
--- draggable
+-- draggable main frame
 local dragging, dragStart, startPos = false, nil, nil
 MainFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -649,7 +733,24 @@ end)
 local menuOpen = false
 UIS.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.K then menuOpen = not menuOpen; MainFrame.Visible = menuOpen end end)
 
--- TELEPORT GUI (kept simple)
+-- TELEPORT quick button (renamed to "Teleport")
+local TeleportQuickBtn = Instance.new("TextButton", TitleBar)
+TeleportQuickBtn.Size = UDim2.new(0, 64, 0, 28)
+TeleportQuickBtn.Position = UDim2.new(1, -260, 0, 10)
+TeleportQuickBtn.BackgroundColor3 = Color3.fromRGB(38,38,38)
+TeleportQuickBtn.Text = "Teleport"
+TeleportQuickBtn.Font = Enum.Font.GothamBold
+TeleportQuickBtn.TextColor3 = Color3.fromRGB(220,220,220)
+local tpCorner = Instance.new("UICorner", TeleportQuickBtn); tpCorner.CornerRadius = UDim.new(0,6)
+TeleportQuickBtn.MouseButton1Click:Connect(function()
+    -- open Teleport tab in main menu (preferred) or toggle external window if you keep it
+    currentCategory = "Teleport"
+    setActiveTabVisual(TabTeleport)
+    MainFrame.Visible = true
+    buildCategory("Teleport", SearchBox.Text)
+end)
+
+-- OPTIONAL: keep external Teleport GUI for quick list (kept but optional)
 local TeleportGui = Instance.new("Frame", GUI)
 TeleportGui.Name = "FTF_Teleport_Window"
 TeleportGui.Size = UDim2.new(0, 320, 0, 420)
@@ -657,17 +758,19 @@ TeleportGui.Position = UDim2.new(0.5, MENU_WIDTH/2 + 20, 0.12, 0)
 TeleportGui.BackgroundColor3 = Color3.fromRGB(18,18,18)
 TeleportGui.BorderSizePixel = 0
 TeleportGui.Visible = false
-local tpCorner = Instance.new("UICorner", TeleportGui); tpCorner.CornerRadius = UDim.new(0,12)
+local tpCorner2 = Instance.new("UICorner", TeleportGui); tpCorner2.CornerRadius = UDim.new(0,12)
 local tpTitle = Instance.new("TextLabel", TeleportGui); tpTitle.Size = UDim2.new(1, -24, 0, 32); tpTitle.Position = UDim2.new(0, 12, 0, 12); tpTitle.BackgroundTransparency = 1; tpTitle.Font = Enum.Font.GothamBold; tpTitle.TextSize = 16; tpTitle.TextColor3 = Color3.fromRGB(200,220,240); tpTitle.Text = "Teleporte - Jogadores"; tpTitle.TextXAlignment = Enum.TextXAlignment.Left
 local tpClose = Instance.new("TextButton", TeleportGui); tpClose.Size = UDim2.new(0, 28, 0, 28); tpClose.Position = UDim2.new(1, -40, 0, 8); tpClose.BackgroundTransparency = 1; tpClose.Text = "✕"; tpClose.Font = Enum.Font.GothamBlack; tpClose.TextColor3 = Color3.fromRGB(180,200,220)
 tpClose.MouseButton1Click:Connect(function() TeleportGui.Visible = false end)
 local tpScroll = Instance.new("ScrollingFrame", TeleportGui); tpScroll.Size = UDim2.new(1, -24, 1, -68); tpScroll.Position = UDim2.new(0, 12, 0, 48); tpScroll.BackgroundTransparency = 1; tpScroll.BorderSizePixel = 0; tpScroll.ScrollBarThickness = 8
 local tpLayout = Instance.new("UIListLayout", tpScroll); tpLayout.SortOrder = Enum.SortOrder.LayoutOrder; tpLayout.Padding = UDim.new(0, 8)
 
-local function rebuildTeleportList()
+local function rebuildTeleportWindow()
     for _,c in pairs(tpScroll:GetChildren()) do if c:IsA("TextButton") or c:IsA("Frame") then c:Destroy() end end
     local order = 1
-    for _,pl in ipairs(Players:GetPlayers()) do
+    local players = Players:GetPlayers()
+    table.sort(players, function(a,b) return (a.DisplayName:lower()..a.Name:lower()) < (b.DisplayName:lower()..b.Name:lower()) end)
+    for _,pl in ipairs(players) do
         if pl ~= LocalPlayer then
             local b = Instance.new("TextButton", tpScroll)
             b.Size = UDim2.new(1, -8, 0, 40); b.Position = UDim2.new(0, 4, 0, 0)
@@ -688,22 +791,12 @@ local function rebuildTeleportList()
         end
     end
 end
-Players.PlayerAdded:Connect(function() task.wait(0.12); rebuildTeleportList() end)
-Players.PlayerRemoving:Connect(function() task.wait(0.12); rebuildTeleportList() end)
-rebuildTeleportList()
 
--- Teleport quick button on main UI
-local TeleportQuickBtn = Instance.new("TextButton", TitleBar)
-TeleportQuickBtn.Size = UDim2.new(0, 40, 0, 28)
-TeleportQuickBtn.Position = UDim2.new(1, -236, 0, 10)
-TeleportQuickBtn.BackgroundColor3 = Color3.fromRGB(38,38,38)
-TeleportQuickBtn.Text = "TP"
-TeleportQuickBtn.Font = Enum.Font.GothamBold
-TeleportQuickBtn.TextColor3 = Color3.fromRGB(220,220,220)
-local tpCorner = Instance.new("UICorner", TeleportQuickBtn); tpCorner.CornerRadius = UDim.new(0,6)
-TeleportQuickBtn.MouseButton1Click:Connect(function() TeleportGui.Visible = not TeleportGui.Visible end)
+Players.PlayerAdded:Connect(function() rebuildTeleportWindow() end)
+Players.PlayerRemoving:Connect(function() rebuildTeleportWindow() end)
+rebuildTeleportWindow()
 
--- Cleanup function
+-- Cleanup
 local function cleanupAll()
     if TextureActive then disableTextureToggle() end
     if GraySkinActive then disableGraySkin() end
@@ -735,7 +828,7 @@ Players.PlayerRemoving:Connect(function(p)
     if bottomUI[p] and bottomUI[p].screenGui and bottomUI[p].screenGui.Parent then bottomUI[p].screenGui:Destroy() end bottomUI[p] = nil
     if compHighlights[p] then RemoveComputerHighlight(p) end
     if skinBackup[p] then restoreGrayForPlayer(p); skinBackup[p] = nil end
-    if TeleportGui and TeleportGui.Visible then task.delay(0.05, function() rebuildTeleportList() end) end
+    if currentCategory == "Teleport" then task.delay(0.05, function() buildCategory("Teleport", SearchBox.Text) end) end
 end)
 
-print("[FTF_ESP] UI redesenhada e carregada")
+print("[FTF_ESP] Atualizado: Search vazio + Teleport como categoria dinâmica")
