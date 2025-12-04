@@ -1,111 +1,118 @@
--- RunnerSimpleModern.local.lua
+-- RunnerMinimalFixed.local.lua
 -- LocalScript -> Coloque em StarterPlayerScripts
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Root GUI
+-- Root ScreenGui (alto DisplayOrder para evitar sobreposição)
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RunnerSimpleGUI"
+screenGui.Name = "RunnerMinimalFixedGUI"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 2000
 screenGui.IgnoreGuiInset = true
-screenGui.Parent = PlayerGui
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
 
--- Utils
-local function tween(inst, props, info)
-    info = info or TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    TweenService:Create(inst, info, props):Play()
-end
-
+-- Helpers
 local function makeCorner(parent, radius)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, radius or 8)
     c.Parent = parent
     return c
 end
-
 local function makeStroke(parent, thickness, transparency)
     local s = Instance.new("UIStroke")
     s.Thickness = thickness or 1
-    s.Transparency = transparency or 0.6
+    s.Transparency = (transparency ~= nil) and transparency or 0.6
+    s.Color = Color3.fromRGB(0,0,0)
     s.Parent = parent
     return s
 end
-
+local function tween(inst, props, info)
+    info = info or TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    TweenService:Create(inst, info, props):Play()
+end
 local function percentText(v)
     return tostring(math.floor(v * 100 + 0.5)) .. "%"
 end
 
--- Minimal bottom hint
+-- Minimal hint (very small, minimalist)
 local hint = Instance.new("Frame")
-hint.Name = "Hint"
+hint.Name = "MinimalHint"
 hint.AnchorPoint = Vector2.new(0.5, 1)
 hint.Size = UDim2.new(0, 220, 0, 34)
-hint.Position = UDim2.new(0.5, 0, 1, -16)
+hint.Position = UDim2.new(0.5, 0, 1, -22)
 hint.BackgroundColor3 = Color3.fromRGB(28, 30, 34)
 hint.BorderSizePixel = 0
 hint.Parent = screenGui
 makeCorner(hint, 10)
-hint.BackgroundTransparency = 1
-hint.ZIndex = 50
+hint.ZIndex = 100
+hint.Visible = true
+hint.BackgroundTransparency = 1 -- will tween in
 
 local hintText = Instance.new("TextLabel")
 hintText.Name = "HintText"
 hintText.Size = UDim2.new(1, -18, 1, 0)
 hintText.Position = UDim2.new(0, 9, 0, 0)
 hintText.BackgroundTransparency = 1
-hintText.Font = Enum.Font.Gotham
+hintText.Font = Enum.Font.SourceSansSemibold
 hintText.TextSize = 14
-hintText.TextScaled = false
+hintText.TextScaled = true
 hintText.Text = 'Pressione "L" para abrir o menu'
-hintText.TextColor3 = Color3.fromRGB(235, 235, 235)
+hintText.TextColor3 = Color3.fromRGB(242,242,242)
+hintText.TextTransparency = 0
 hintText.TextXAlignment = Enum.TextXAlignment.Left
 hintText.Parent = hint
-makeStroke(hintText, 0.8, 0.7)
+makeStroke(hintText, 0.8, 0.65)
 
--- Minimal menu
+-- Menu (compact modern)
 local menu = Instance.new("Frame")
-menu.Name = "Menu"
+menu.Name = "RunnerMenu"
 menu.AnchorPoint = Vector2.new(0.5, 0.5)
 menu.Size = UDim2.new(0, 320, 0, 140)
 menu.Position = UDim2.new(0.5, 0, 0.45, 0)
-menu.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+menu.BackgroundColor3 = Color3.fromRGB(18, 18, 20)
 menu.BorderSizePixel = 0
-menu.Visible = false
 menu.Parent = screenGui
 makeCorner(menu, 12)
-menu.ZIndex = 60
+menu.ZIndex = 110
+menu.Visible = false
+menu.BackgroundTransparency = 0 -- visible by default when shown
 
 local title = Instance.new("TextLabel")
+title.Name = "Title"
 title.Size = UDim2.new(1, -24, 0, 28)
 title.Position = UDim2.new(0, 12, 0, 12)
 title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
-title.TextSize = 16
-title.TextColor3 = Color3.fromRGB(245, 245, 245)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
 title.Text = "Runner"
+title.TextColor3 = Color3.fromRGB(245,245,245)
 title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextTransparency = 0
+title.TextScaled = false
 title.Parent = menu
 
 local subtitle = Instance.new("TextLabel")
+subtitle.Name = "Subtitle"
 subtitle.Size = UDim2.new(1, -24, 0, 16)
 subtitle.Position = UDim2.new(0, 12, 0, 40)
 subtitle.BackgroundTransparency = 1
-subtitle.Font = Enum.Font.Gotham
+subtitle.Font = Enum.Font.SourceSans
 subtitle.TextSize = 12
-subtitle.TextColor3 = Color3.fromRGB(170, 170, 170)
 subtitle.Text = "Controles de exibição"
+subtitle.TextColor3 = Color3.fromRGB(170,170,170)
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.TextTransparency = 0
 subtitle.Parent = menu
 
--- Row: toggle
+-- Toggle row
 local row = Instance.new("Frame")
+row.Name = "Row"
 row.Size = UDim2.new(1, -24, 0, 48)
 row.Position = UDim2.new(0, 12, 0, 64)
 row.BackgroundTransparency = 1
@@ -114,33 +121,32 @@ row.Parent = menu
 local label = Instance.new("TextLabel")
 label.Size = UDim2.new(0.68, 0, 1, 0)
 label.BackgroundTransparency = 1
-label.Font = Enum.Font.Gotham
+label.Font = Enum.Font.SourceSans
 label.TextSize = 14
-label.TextColor3 = Color3.fromRGB(235, 235, 235)
 label.Text = "Contador de tempo (runner)"
+label.TextColor3 = Color3.fromRGB(235,235,235)
 label.TextXAlignment = Enum.TextXAlignment.Left
+label.TextTransparency = 0
 label.Parent = row
 
 local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "Toggle"
 toggleBtn.Size = UDim2.new(0.32, 0, 0.72, 0)
 toggleBtn.Position = UDim2.new(0.68, 0, 0.14, 0)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
 toggleBtn.BorderSizePixel = 0
-toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.Font = Enum.Font.SourceSansBold
 toggleBtn.TextSize = 14
-toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleBtn.Text = "OFF"
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.TextTransparency = 0
 toggleBtn.Parent = row
 makeCorner(toggleBtn, 8)
 
--- Runner state
+-- Runner logic (reactive only)
 local runnerEnabled = false
-local state = {
-    perPlayer = {}, -- [player] = { charConn, beastAddedConn, beastRemovedConn, numberConn }
-    playersConn = nil
-}
+local state = { perPlayer = {}, playersConn = nil }
 
--- Create/destroy billboards
 local function destroyBillboardFromCharacter(character)
     if not character then return end
     local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -152,8 +158,8 @@ end
 
 local function createBillboardLabel(player)
     if not player or player == LocalPlayer then return nil end
+    if not player.Character then return nil end
     local char = player.Character
-    if not char then return nil end
     local hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
     if not hrp then return nil end
 
@@ -162,34 +168,35 @@ local function createBillboardLabel(player)
         bb = Instance.new("BillboardGui")
         bb.Name = "BeastPowerBillboard"
         bb.Size = UDim2.new(2, 0, 1, 0)
-        bb.StudsOffset = Vector3.new(0, 3, 0)
+        bb.StudsOffset = Vector3.new(0, 3.5, 0)
         bb.AlwaysOnTop = true
         bb.LightInfluence = 1
-        bb.MaxDistance = 100
+        bb.MaxDistance = 120
         bb.Parent = hrp
 
         local txt = Instance.new("TextLabel")
         txt.Name = "BeastPowerLabel"
         txt.Size = UDim2.new(1, 0, 1, 0)
         txt.BackgroundTransparency = 1
-        txt.Font = Enum.Font.GothamBold
-        txt.TextSize = 20
+        txt.Font = Enum.Font.SourceSansBold
+        txt.TextSize = 18
         txt.TextScaled = true
+        txt.TextWrapped = true
         txt.Text = ""
-        txt.TextColor3 = Color3.fromRGB(255, 255, 255)
-        txt.TextStrokeTransparency = 0.5
+        txt.TextColor3 = Color3.fromRGB(255,255,255)
+        txt.TextTransparency = 0
         txt.Parent = bb
 
         local stroke = Instance.new("UIStroke")
-        stroke.Thickness = 1.6
+        stroke.Thickness = 1.5
         stroke.Transparency = 0.45
-        stroke.Color = Color3.new(0,0,0)
+        stroke.Color = Color3.fromRGB(0,0,0)
         stroke.Parent = txt
     end
+
     return bb:FindFirstChild("BeastPowerLabel")
 end
 
--- Reactive connections (monitor BeastPowers -> NumberValue)
 local function connectReactiveForCharacter(player, character)
     if not player or not character then return end
     state.perPlayer[player] = state.perPlayer[player] or {}
@@ -205,7 +212,6 @@ local function connectReactiveForCharacter(player, character)
         local beast = character:FindFirstChild("BeastPowers")
         local label = createBillboardLabel(player)
         if beast then
-            -- try find NumberValue
             local nv = beast:FindFirstChildOfClass("NumberValue")
             if nv then
                 if label then label.Text = percentText(nv.Value) end
@@ -214,7 +220,7 @@ local function connectReactiveForCharacter(player, character)
                 end)
             else
                 if label then label.Text = "" end
-                -- also listen for child added inside BeastPowers (if NV created later)
+                -- listen for NumberValue if created later
                 entry.beastChildConn = beast.ChildAdded:Connect(function(child)
                     if child:IsA("NumberValue") then
                         task.wait(0.02)
@@ -229,7 +235,7 @@ local function connectReactiveForCharacter(player, character)
 
     entry.beastAddedConn = character.ChildAdded:Connect(function(child)
         if child.Name == "BeastPowers" then
-            task.wait(0.05)
+            task.wait(0.04)
             tryConnectNumber()
         end
     end)
@@ -241,37 +247,32 @@ local function connectReactiveForCharacter(player, character)
         end
     end)
 
-    -- initial attempt
     tryConnectNumber()
 end
 
-local function attachCharacterListener(player)
-    if not player then return end
-    state.perPlayer[player] = state.perPlayer[player] or {}
-    local entry = state.perPlayer[player]
-
-    if entry.charConn then entry.charConn:Disconnect() entry.charConn = nil end
-    entry.charConn = player.CharacterAdded:Connect(function(character)
-        task.wait(0.4)
-        createBillboardLabel(player)
-        connectReactiveForCharacter(player, character)
-    end)
-end
-
-local function attachExistingPlayers()
+local function attachPlayerListeners()
     for _, pl in ipairs(Players:GetPlayers()) do
         if pl ~= LocalPlayer then
-            createBillboardLabel(pl)
-            attachCharacterListener(pl)
+            state.perPlayer[pl] = state.perPlayer[pl] or {}
+            if state.perPlayer[pl].charConn then
+                state.perPlayer[pl].charConn:Disconnect()
+                state.perPlayer[pl].charConn = nil
+            end
+            state.perPlayer[pl].charConn = pl.CharacterAdded:Connect(function(char)
+                task.wait(0.35)
+                createBillboardLabel(pl)
+                connectReactiveForCharacter(pl, char)
+            end)
+            -- initial if already spawned
             if pl.Character then
+                createBillboardLabel(pl)
                 connectReactiveForCharacter(pl, pl.Character)
             end
         end
     end
 end
 
-local function cleanupRunner()
-    -- disconnect all per-player connections and destroy GUIs
+local function cleanupAll()
     for pl, entry in pairs(state.perPlayer) do
         if entry.charConn then entry.charConn:Disconnect() end
         if entry.beastAddedConn then entry.beastAddedConn:Disconnect() end
@@ -283,25 +284,28 @@ local function cleanupRunner()
 
     -- destroy billboards
     for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer and pl.Character then
-            destroyBillboardFromCharacter(pl.Character)
-        end
+        if pl.Character then destroyBillboardFromCharacter(pl.Character) end
     end
 end
 
 local function enableRunner()
     if runnerEnabled then return end
     runnerEnabled = true
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 90)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(0,160,90)
     toggleBtn.Text = "ON"
 
-    attachExistingPlayers()
+    attachPlayerListeners()
     state.playersConn = Players.PlayerAdded:Connect(function(pl)
+        task.wait(0.25)
         if pl ~= LocalPlayer then
-            attachCharacterListener(pl)
-            task.wait(0.3)
-            createBillboardLabel(pl)
+            state.perPlayer[pl] = state.perPlayer[pl] or {}
+            state.perPlayer[pl].charConn = pl.CharacterAdded:Connect(function(c)
+                task.wait(0.35)
+                createBillboardLabel(pl)
+                connectReactiveForCharacter(pl, c)
+            end)
             if pl.Character then
+                createBillboardLabel(pl)
                 connectReactiveForCharacter(pl, pl.Character)
             end
         end
@@ -311,30 +315,25 @@ end
 local function disableRunner()
     if not runnerEnabled then return end
     runnerEnabled = false
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(170,0,0)
     toggleBtn.Text = "OFF"
-    cleanupRunner()
+    cleanupAll()
 end
 
--- Button binding
 toggleBtn.MouseButton1Click:Connect(function()
-    if runnerEnabled then
-        disableRunner()
-    else
-        enableRunner()
-    end
+    if runnerEnabled then disableRunner() else enableRunner() end
 end)
 
--- Menu toggle with L key
+-- Toggle menu with L
 local menuVisible = false
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
     if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.L then
         menuVisible = not menuVisible
         if menuVisible then
             menu.Visible = true
+            menu.Position = UDim2.new(0.5, 0, 0.35, 0)
             menu.BackgroundTransparency = 1
-            menu.Position = UDim2.new(0.5, 0, 0.4, 0)
             tween(menu, {Position = UDim2.new(0.5, 0, 0.45, 0), BackgroundTransparency = 0}, TweenInfo.new(0.18))
         else
             tween(menu, {Position = UDim2.new(0.5, 0, 0.38, 0), BackgroundTransparency = 1}, TweenInfo.new(0.14))
@@ -343,12 +342,12 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Show minimal hint for 5s
+-- Hint animation (small and minimal) - ensures text appears
 task.spawn(function()
     task.wait(0.12)
     hint.Position = UDim2.new(0.5, 0, 1, 12)
     hint.BackgroundTransparency = 1
-    tween(hint, {Position = UDim2.new(0.5, 0, 1, -16), BackgroundTransparency = 0}, TweenInfo.new(0.18))
+    tween(hint, {Position = UDim2.new(0.5, 0, 1, -22), BackgroundTransparency = 0}, TweenInfo.new(0.18))
     task.wait(5)
     tween(hint, {Position = UDim2.new(0.5, 0, 1, 28), BackgroundTransparency = 1}, TweenInfo.new(0.16))
     task.delay(0.16, function() if hint and hint.Parent then hint:Destroy() end end)
@@ -356,14 +355,12 @@ end)
 
 -- Cleanup on player leaving
 Players.PlayerRemoving:Connect(function(pl)
-    local entry = state.perPlayer[pl]
-    if entry then
-        if entry.charConn then entry.charConn:Disconnect() end
-        if entry.beastAddedConn then entry.beastAddedConn:Disconnect() end
-        if entry.beastRemovedConn then entry.beastRemovedConn:Disconnect() end
-        if entry.numberConn then entry.numberConn:Disconnect() end
+    local e = state.perPlayer[pl]
+    if e then
+        if e.charConn then e.charConn:Disconnect() end
+        if e.beastAddedConn then e.beastAddedConn:Disconnect() end
+        if e.beastRemovedConn then e.beastRemovedConn:Disconnect() end
+        if e.numberConn then e.numberConn:Disconnect() end
         state.perPlayer[pl] = nil
     end
 end)
-
--- End of script
