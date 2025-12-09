@@ -1,4 +1,4 @@
--- RunnerMinimalFixed.local.lua
+-- RunnerMinimalDistant.local.lua
 -- LocalScript -> Coloque em StarterPlayerScripts
 
 local Players = game:GetService("Players")
@@ -10,9 +10,9 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- Root ScreenGui (alto DisplayOrder para evitar sobreposição)
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RunnerMinimalFixedGUI"
+screenGui.Name = "RunnerMinimalDistantGUI"
 screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 2000
+screenGui.DisplayOrder = 3000
 screenGui.IgnoreGuiInset = true
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
@@ -44,20 +44,19 @@ end
 local hint = Instance.new("Frame")
 hint.Name = "MinimalHint"
 hint.AnchorPoint = Vector2.new(0.5, 1)
-hint.Size = UDim2.new(0, 220, 0, 34)
-hint.Position = UDim2.new(0.5, 0, 1, -22)
+hint.Size = UDim2.new(0, 200, 0, 30)
+hint.Position = UDim2.new(0.5, 0, 1, -18)
 hint.BackgroundColor3 = Color3.fromRGB(28, 30, 34)
 hint.BorderSizePixel = 0
 hint.Parent = screenGui
 makeCorner(hint, 10)
 hint.ZIndex = 100
-hint.Visible = true
 hint.BackgroundTransparency = 1 -- will tween in
 
 local hintText = Instance.new("TextLabel")
 hintText.Name = "HintText"
-hintText.Size = UDim2.new(1, -18, 1, 0)
-hintText.Position = UDim2.new(0, 9, 0, 0)
+hintText.Size = UDim2.new(1, -16, 1, 0)
+hintText.Position = UDim2.new(0, 8, 0, 0)
 hintText.BackgroundTransparency = 1
 hintText.Font = Enum.Font.SourceSansSemibold
 hintText.TextSize = 14
@@ -167,11 +166,13 @@ local function createBillboardLabel(player)
     if not bb then
         bb = Instance.new("BillboardGui")
         bb.Name = "BeastPowerBillboard"
-        bb.Size = UDim2.new(2, 0, 1, 0)
-        bb.StudsOffset = Vector3.new(0, 3.5, 0)
-        bb.AlwaysOnTop = true
-        bb.LightInfluence = 1
-        bb.MaxDistance = 120
+
+        -- Larger size above head
+        bb.Size = UDim2.new(3.2, 0, 1.6, 0)          -- bigger on-screen size
+        bb.StudsOffset = Vector3.new(0, 5.5, 0)      -- higher above the head
+        bb.AlwaysOnTop = true                        -- render over walls/objects
+        bb.LightInfluence = 0                        -- unaffected by scene lighting
+        bb.MaxDistance = 1e6                         -- very large distance so visible from far
         bb.Parent = hrp
 
         local txt = Instance.new("TextLabel")
@@ -179,8 +180,8 @@ local function createBillboardLabel(player)
         txt.Size = UDim2.new(1, 0, 1, 0)
         txt.BackgroundTransparency = 1
         txt.Font = Enum.Font.SourceSansBold
-        txt.TextSize = 18
-        txt.TextScaled = true
+        txt.TextSize = 28                             -- large base size
+        txt.TextScaled = true                         -- scaled to fit, good for multiple resolutions
         txt.TextWrapped = true
         txt.Text = ""
         txt.TextColor3 = Color3.fromRGB(255,255,255)
@@ -188,7 +189,7 @@ local function createBillboardLabel(player)
         txt.Parent = bb
 
         local stroke = Instance.new("UIStroke")
-        stroke.Thickness = 1.5
+        stroke.Thickness = 2
         stroke.Transparency = 0.45
         stroke.Color = Color3.fromRGB(0,0,0)
         stroke.Parent = txt
@@ -206,6 +207,7 @@ local function connectReactiveForCharacter(player, character)
     if entry.numberConn then entry.numberConn:Disconnect() entry.numberConn = nil end
     if entry.beastAddedConn then entry.beastAddedConn:Disconnect() entry.beastAddedConn = nil end
     if entry.beastRemovedConn then entry.beastRemovedConn:Disconnect() entry.beastRemovedConn = nil end
+    if entry.beastChildConn then entry.beastChildConn:Disconnect() entry.beastChildConn = nil end
 
     local function tryConnectNumber()
         if not character or not character.Parent then return end
@@ -220,7 +222,7 @@ local function connectReactiveForCharacter(player, character)
                 end)
             else
                 if label then label.Text = "" end
-                -- listen for NumberValue if created later
+                -- if NumberValue may be created later inside BeastPowers, listen for it
                 entry.beastChildConn = beast.ChildAdded:Connect(function(child)
                     if child:IsA("NumberValue") then
                         task.wait(0.02)
@@ -242,6 +244,7 @@ local function connectReactiveForCharacter(player, character)
     entry.beastRemovedConn = character.ChildRemoved:Connect(function(child)
         if child.Name == "BeastPowers" then
             if entry.numberConn then entry.numberConn:Disconnect() entry.numberConn = nil end
+            if entry.beastChildConn then entry.beastChildConn:Disconnect() entry.beastChildConn = nil end
             local label = createBillboardLabel(player)
             if label then label.Text = "" end
         end
@@ -277,6 +280,7 @@ local function cleanupAll()
         if entry.charConn then entry.charConn:Disconnect() end
         if entry.beastAddedConn then entry.beastAddedConn:Disconnect() end
         if entry.beastRemovedConn then entry.beastRemovedConn:Disconnect() end
+        if entry.beastChildConn then entry.beastChildConn:Disconnect() end
         if entry.numberConn then entry.numberConn:Disconnect() end
         state.perPlayer[pl] = nil
     end
@@ -347,7 +351,7 @@ task.spawn(function()
     task.wait(0.12)
     hint.Position = UDim2.new(0.5, 0, 1, 12)
     hint.BackgroundTransparency = 1
-    tween(hint, {Position = UDim2.new(0.5, 0, 1, -22), BackgroundTransparency = 0}, TweenInfo.new(0.18))
+    tween(hint, {Position = UDim2.new(0.5, 0, 1, -18), BackgroundTransparency = 0}, TweenInfo.new(0.18))
     task.wait(5)
     tween(hint, {Position = UDim2.new(0.5, 0, 1, 28), BackgroundTransparency = 1}, TweenInfo.new(0.16))
     task.delay(0.16, function() if hint and hint.Parent then hint:Destroy() end end)
@@ -360,6 +364,7 @@ Players.PlayerRemoving:Connect(function(pl)
         if e.charConn then e.charConn:Disconnect() end
         if e.beastAddedConn then e.beastAddedConn:Disconnect() end
         if e.beastRemovedConn then e.beastRemovedConn:Disconnect() end
+        if e.beastChildConn then e.beastChildConn:Disconnect() end
         if e.numberConn then e.numberConn:Disconnect() end
         state.perPlayer[pl] = nil
     end
