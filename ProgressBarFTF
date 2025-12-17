@@ -1,0 +1,258 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+
+local localPlayer = Players.LocalPlayer
+local progressEnabled = true
+local SHOW_DISTANCE = 25 -- distância para mostrar a barra
+
+-- ==================================
+-- MENU MODERNO, ELEGANTE E FUNCIONAL
+-- ==================================
+local function createMenu()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ProgressMenu"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+    -- FRAME PRINCIPAL
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 280, 0, 150)
+    frame.Position = UDim2.new(0.03, 0, 0.03, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    frame.BorderSizePixel = 0
+    frame.ClipsDescendants = true
+    frame.Parent = screenGui
+    frame.Active = true
+    frame.Draggable = true
+
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 15)
+    uiCorner.Parent = frame
+
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(50, 50, 50)
+    uiStroke.Thickness = 2
+    uiStroke.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -60, 0, 35)
+    title.Position = UDim2.new(0, 10, 0, 5)
+    title.BackgroundTransparency = 1
+    title.Text = "💻 Progress Menu"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextScaled = true
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextScaled = true
+    closeBtn.Parent = frame
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 6)
+    closeCorner.Parent = closeBtn
+
+    local minimizeBtn = Instance.new("TextButton")
+    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    minimizeBtn.Text = "—"
+    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minimizeBtn.Font = Enum.Font.GothamBold
+    minimizeBtn.TextScaled = true
+    minimizeBtn.Parent = frame
+    local minCorner = Instance.new("UICorner")
+    minCorner.CornerRadius = UDim.new(0, 6)
+    minCorner.Parent = minimizeBtn
+
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0, 240, 0, 50)
+    toggleBtn.Position = UDim2.new(0, 20, 0, 60)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.TextScaled = true
+    toggleBtn.Text = "Progress: ON"
+    toggleBtn.Parent = frame
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(0, 10)
+    toggleCorner.Parent = toggleBtn
+
+    local function hoverAnim(button, baseColor, hoverColor)
+        button.MouseEnter:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = hoverColor}):Play()
+        end)
+        button.MouseLeave:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = baseColor}):Play()
+        end)
+    end
+
+    hoverAnim(toggleBtn, toggleBtn.BackgroundColor3, Color3.fromRGB(110, 110, 130))
+    hoverAnim(minimizeBtn, minimizeBtn.BackgroundColor3, Color3.fromRGB(150, 150, 150))
+    hoverAnim(closeBtn, closeBtn.BackgroundColor3, Color3.fromRGB(255, 80, 80))
+
+    toggleBtn.MouseButton1Click:Connect(function()
+        progressEnabled = not progressEnabled
+        toggleBtn.Text = progressEnabled and "Progress: ON" or "Progress: OFF"
+        local targetColor = progressEnabled and Color3.fromRGB(70, 70, 90) or Color3.fromRGB(120, 50, 50)
+        TweenService:Create(toggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+    end)
+
+    local minimized = false
+    minimizeBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            TweenService:Create(frame, TweenInfo.new(0.25), {Size = UDim2.new(0, 100, 0, 35)}):Play()
+            toggleBtn.Visible = false
+            title.Text = "Progress"
+        else
+            TweenService:Create(frame, TweenInfo.new(0.25), {Size = UDim2.new(0, 280, 0, 150)}):Play()
+            toggleBtn.Visible = true
+            title.Text = "💻 Progress Menu"
+        end
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+end
+
+createMenu()
+
+-- ==================================
+-- BARRA DE PROGRESSO
+-- ==================================
+local function createProgressBar(parent)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ProgressBar"
+	billboard.Adornee = parent:FindFirstChild("Screen") or parent.PrimaryPart
+	billboard.Size = UDim2.new(0, 120, 0, 12)
+	billboard.StudsOffset = Vector3.new(0, 4.2, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Enabled = progressEnabled
+	billboard.Parent = parent
+
+	local background = Instance.new("Frame")
+	background.Size = UDim2.new(1, 0, 1, 0)
+	background.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+	background.BorderSizePixel = 2
+	background.BorderColor3 = Color3.fromRGB(255, 255, 255)
+	background.Parent = billboard
+
+	local bar = Instance.new("Frame")
+	bar.Name = "Bar"
+	bar.Size = UDim2.new(0, 0, 1, 0)
+	bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	bar.BorderSizePixel = 0
+	bar.Parent = background
+
+	local text = Instance.new("TextLabel")
+	text.Name = "ProgressText"
+	text.Size = UDim2.new(1, 0, 1, 0)
+	text.BackgroundTransparency = 1
+	text.TextColor3 = Color3.fromRGB(255, 255, 255)
+	text.TextStrokeTransparency = 0
+	text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	text.TextScaled = true
+	text.Font = Enum.Font.SciFi
+	text.Text = "0.0%"
+	text.Parent = background
+
+	return billboard, bar, text
+end
+
+local function setupComputer(tableModel)
+	if tableModel:FindFirstChild("ProgressBar") then return end
+
+	local billboard, bar, text = createProgressBar(tableModel)
+	local highlight = tableModel:FindFirstChildOfClass("Highlight") or Instance.new("Highlight")
+	highlight.Name = "ComputerHighlight"
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Enabled = progressEnabled
+	highlight.Parent = tableModel
+
+	local savedProgress = 0
+
+	RunService.Heartbeat:Connect(function()
+		local character = localPlayer.Character
+		local referencePart = tableModel:FindFirstChild("Screen") or tableModel.PrimaryPart
+		local near = false
+		if character and character:FindFirstChild("HumanoidRootPart") and referencePart then
+			local distance = (character.HumanoidRootPart.Position - referencePart.Position).Magnitude
+			near = distance <= SHOW_DISTANCE
+		end
+
+		billboard.Enabled = progressEnabled and near
+		highlight.Enabled = progressEnabled and near
+		if not (progressEnabled and near) then return end
+
+		local screen = tableModel:FindFirstChild("Screen")
+		if screen and screen:IsA("BasePart") then
+			highlight.FillColor = screen.Color
+			highlight.OutlineColor = screen.Color
+		end
+
+		local highestTouch = 0
+		for _, part in ipairs(tableModel:GetChildren()) do
+			if part:IsA("BasePart") and part.Name:match("^ComputerTrigger") then
+				for _, touchingPart in ipairs(part:GetTouchingParts()) do
+					local plr = Players:GetPlayerFromCharacter(touchingPart.Parent)
+					if plr then
+						local tpsm = plr:FindFirstChild("TempPlayerStatsModule")
+						if tpsm then
+							local ragdoll = tpsm:FindFirstChild("Ragdoll")
+							local ap = tpsm:FindFirstChild("ActionProgress")
+							if ragdoll and typeof(ragdoll.Value) == "boolean" and not ragdoll.Value then
+								if ap and typeof(ap.Value) == "number" then
+									highestTouch = math.max(highestTouch, ap.Value)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+
+		savedProgress = math.max(savedProgress, highestTouch)
+		bar.Size = UDim2.new(savedProgress, 0, 1, 0)
+
+		if savedProgress >= 1 then
+			bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+			text.Text = "COMPLETED"
+		else
+			bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			text.Text = string.format("%.1f%%", math.floor(savedProgress * 200 + 0.1) / 2)
+		end
+	end)
+end
+
+local function reloadComputers()
+	task.spawn(function()
+		while true do
+			local currentMap = ReplicatedStorage:WaitForChild("CurrentMap")
+			local mapName = tostring(currentMap.Value)
+			if mapName and mapName ~= "" then
+				local map = Workspace:FindFirstChild(mapName)
+				if map then
+					for _, obj in ipairs(map:GetChildren()) do
+						if obj.Name == "ComputerTable" then
+							setupComputer(obj)
+						end
+					end
+				end
+			end
+			task.wait(1)
+		end
+	end)
+end
+
+reloadComputers()
