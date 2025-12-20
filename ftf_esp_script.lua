@@ -1,7 +1,7 @@
 -- FTF ESP — By David
 -- Integrated Contador de Down, BeastPower Time and Computer ProgressBar (toggleable)
 -- Updated: Computer ESP replaced with the method you provided (fixed), menu/draggable/UI kept as requested.
--- Removed WalkSpeed UI from "Hackers" category per request; "Hackers" remains an empty category.
+-- WalkSpeed quick input added into "Hackers" category (single input field).
 
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
@@ -149,7 +149,6 @@ Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
 -- ======================
 -- Computer ESP (USER METHOD: replaced to fix bug)
--- This matches the method you supplied (computer_monitor.lua) — wired per-model, connects Changed events, updates highlight color from Screen part.
 -- ======================
 local ComputerESPEnabled = false
 local computerInfo = {}
@@ -1142,25 +1141,46 @@ local function disableBeastPowerTime()
 end
 
 -- ======================
--- Computer ProgressBar
+-- Computer ProgressBar (replaced with provided implementation — adjusted to work with this hub)
 -- ======================
 local ComputerProgressActive = false
-local computerProgress = {
-    heartbeatConns = {}, -- model -> conn
-    reloadTask = nil,
-    playerAddedConn = nil,
-    active = false
-}
+local progressEnabled = true -- visible/enabled state for bars & highlights (toggleable with P)
+local progressHeartbeatConns = {} -- model -> conn
+local progressReloadTask = nil
+local progressRunning = false
 
-local function createProgressBar(parent)
+-- Toggle visibility (P) — toggles enabled state of ProgressBar billboards and ComputerHighlight highlights
+local toggleKey = Enum.KeyCode.P
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == toggleKey then
+        progressEnabled = not progressEnabled
+        -- toggle Billboards in our ScreenGui and Highlights in workspace
+        for _, descendant in ipairs(ScreenGui:GetDescendants()) do
+            if descendant:IsA("BillboardGui") and descendant.Name == "ProgressBar" then
+                descendant.Enabled = progressEnabled
+            end
+        end
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            if descendant:IsA("Highlight") and descendant.Name == "ComputerHighlight" then
+                descendant.Enabled = progressEnabled
+            end
+        end
+        print("[FTF_ESP] Progress toggled:", progressEnabled)
+    end
+end)
+
+local function createProgressBar(parentPart)
+    if not parentPart or not parentPart:IsA("BasePart") then return nil end
+
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ProgressBar"
-    billboard.Adornee = parent
+    billboard.Adornee = parentPart
     billboard.Size = UDim2.new(0, 120, 0, 12)
     billboard.StudsOffset = Vector3.new(0, 4.2, 0)
     billboard.AlwaysOnTop = true
-    billboard.Enabled = true
-    billboard.Parent = parent
+    billboard.Enabled = progressEnabled
+    billboard.Parent = ScreenGui -- parent to hub ScreenGui so it displays
 
     local background = Instance.new("Frame")
     background.Size = UDim2.new(1, 0, 1, 0)
@@ -1193,19 +1213,35 @@ end
 
 local function setupComputerProgress(tableModel)
     if not ComputerProgressActive then return end
-    if tableModel:FindFirstChild("ProgressBar") then return end
+    if not tableModel or not tableModel:IsA("Model") then return end
+    if progressHeartbeatConns[tableModel] then return end
 
-    local billboard, bar, text = createProgressBar(tableModel)
+    -- find a good adornee part (Screen, PrimaryPart, or first BasePart)
+    local screenPart = tableModel:FindFirstChild("Screen")
+    if not (screenPart and screenPart:IsA("BasePart")) then
+        if tableModel.PrimaryPart and tableModel.PrimaryPart:IsA("BasePart") then
+            screenPart = tableModel.PrimaryPart
+        else
+            for _,c in ipairs(tableModel:GetDescendants()) do
+                if c:IsA("BasePart") then
+                    screenPart = c
+                    break
+                end
+            end
+        end
+    end
+    if not screenPart then return end
+
+    local billboard, bar, text = createProgressBar(screenPart)
+    if not billboard then return end
+
     local highlight = tableModel:FindFirstChildOfClass("Highlight") or Instance.new("Highlight")
     highlight.Name = "ComputerHighlight"
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Enabled = true
+    highlight.Enabled = progressEnabled
     highlight.Parent = tableModel
 
     local savedProgress = 0
-
-    -- ensure we don't create multiple heartbeat connections for same model
-    if computerProgress.heartbeatConns[tableModel] then return end
 
     local conn = RunService.Heartbeat:Connect(function()
         if not ComputerProgressActive then return end
@@ -1214,6 +1250,10 @@ local function setupComputerProgress(tableModel)
         if screen and screen:IsA("BasePart") then
             highlight.FillColor = screen.Color
             highlight.OutlineColor = screen.Color
+            -- also prefer adornee color if needed
+            if billboard and billboard.Parent then
+                billboard.Adornee = screen
+            end
         end
 
         local highestTouch = 0
@@ -1238,52 +1278,47 @@ local function setupComputerProgress(tableModel)
         end
 
         savedProgress = math.max(savedProgress, highestTouch)
-        bar.Size = UDim2.new(savedProgress, 0, 1, 0)
+        if bar then pcall(function() bar.Size = UDim2.new(savedProgress, 0, 1, 0) end) end
 
         if savedProgress >= 1 then
-            bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-            text.Text = "COMPLETED"
+            if bar then pcall(function() bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0) end) end
+            if text then pcall(function() text.Text = "COMPLETED" end) end
         else
-            bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            text.Text = string.format("%.1f%%", math.floor(savedProgress * 200 + 0.1) / 2)
+            if bar then pcall(function() bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255) end) end
+            if text then pcall(function() text.Text = string.format("%.1f%%", math.floor(savedProgress * 200 + 0.1) / 2) end) end
         end
     end)
 
-    computerProgress.heartbeatConns[tableModel] = conn
+    progressHeartbeatConns[tableModel] = { conn = conn, billboard = billboard, highlight = highlight }
 end
 
 local function teardownComputerProgress(tableModel)
     if not tableModel then return end
-    if computerProgress.heartbeatConns[tableModel] then
-        pcall(function() computerProgress.heartbeatConns[tableModel]:Disconnect() end)
-        computerProgress.heartbeatConns[tableModel] = nil
+    local info = progressHeartbeatConns[tableModel]
+    if info then
+        if info.conn then pcall(function() info.conn:Disconnect() end) end
+        if info.billboard then safeDestroy(info.billboard) end
+        if info.highlight and info.highlight:IsA("Highlight") then safeDestroy(info.highlight) end
+        progressHeartbeatConns[tableModel] = nil
     end
-    local pb = tableModel:FindFirstChild("ProgressBar")
-    if pb then safeDestroy(pb) end
-    local hl = tableModel:FindFirstChild("ComputerHighlight")
-    if hl and hl:IsA("Highlight") then safeDestroy(hl) end
 end
 
 local function reloadComputersTask()
-    local function scanMap()
+    while ComputerProgressActive do
         local ok, currentMap = pcall(function() return ReplicatedStorage:FindFirstChild("CurrentMap") end)
-        if not ok or not currentMap then return end
-        local mapValue = currentMap.Value
-        if mapValue and tostring(mapValue) ~= "" then
-            local map = Workspace:FindFirstChild(tostring(mapValue))
-            if map then
-                for _, obj in ipairs(map:GetChildren()) do
-                    if obj.Name == "ComputerTable" and obj:IsA("Model") then
-                        pcall(function() setupComputerProgress(obj) end)
+        if ok and currentMap then
+            local mapValue = currentMap.Value
+            if mapValue and tostring(mapValue) ~= "" then
+                local map = Workspace:FindFirstChild(tostring(mapValue))
+                if map then
+                    for _, obj in ipairs(map:GetChildren()) do
+                        if obj.Name == "ComputerTable" and obj:IsA("Model") then
+                            pcall(function() setupComputerProgress(obj) end)
+                        end
                     end
                 end
             end
         end
-    end
-
-    scanMap()
-    while ComputerProgressActive do
-        scanMap()
         task.wait(1)
     end
 end
@@ -1291,50 +1326,50 @@ end
 local function enableComputerProgress()
     if ComputerProgressActive then return true end
     ComputerProgressActive = true
-    computerProgress.active = true
+    progressEnabled = true
+    -- clean any leftovers before starting
+    for mdl, _ in pairs(progressHeartbeatConns) do
+        teardownComputerProgress(mdl)
+    end
+    progressHeartbeatConns = {}
 
-    spawn(reloadComputersTask)
-
-    computerProgress.playerAddedConn = Players.PlayerAdded:Connect(function(pl) end)
+    progressReloadTask = task.spawn(reloadComputersTask)
     return true
 end
 
 local function disableComputerProgress()
     if not ComputerProgressActive then return false end
     ComputerProgressActive = false
-    computerProgress.active = false
+    progressEnabled = false
 
-    if computerProgress.playerAddedConn then
-        pcall(function() computerProgress.playerAddedConn:Disconnect() end)
-        computerProgress.playerAddedConn = nil
+    -- disconnect and destroy all progress components
+    for mdl, info in pairs(progressHeartbeatConns) do
+        teardownComputerProgress(mdl)
     end
+    progressHeartbeatConns = {}
 
-    for model, conn in pairs(computerProgress.heartbeatConns) do
-        pcall(function() conn:Disconnect() end)
+    -- ensure no lingering billboards in ScreenGui
+    for _, descendant in ipairs(ScreenGui:GetDescendants()) do
+        if descendant:IsA("BillboardGui") and descendant.Name == "ProgressBar" then
+            safeDestroy(descendant)
+        end
     end
-    computerProgress.heartbeatConns = {}
-
-    local ok, currentMap = pcall(function() return ReplicatedStorage:FindFirstChild("CurrentMap") end)
-    if ok and currentMap then
-        local mapName = currentMap.Value
-        if mapName and tostring(mapName) ~= "" then
-            local map = Workspace:FindFirstChild(tostring(mapName))
-            if map then
-                for _, obj in ipairs(map:GetChildren()) do
-                    if obj.Name == "ComputerTable" and obj:IsA("Model") then
-                        pcall(function() teardownComputerProgress(obj) end)
-                    end
-                end
-            end
+    -- ensure highlights removed
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("Highlight") and descendant.Name == "ComputerHighlight" then
+            safeDestroy(descendant)
         end
     end
 
+    -- stop reload task if running
+    progressReloadTask = nil
     return false
 end
 
 -- ======================
--- UI: vertical-left model; close is "X"; menu draggable
+-- UI: vertical-left model; close is "X"; menu/draggable
 -- (the UI layout has been kept as requested; the Computer ESP now uses the user-provided method)
+-- WalkSpeed Quick Input added into Hackers tab (single input)
 -- ======================
 
 local LoadingPanel = Instance.new("Frame", ScreenGui)
@@ -1462,7 +1497,7 @@ CloseBtn.Size = UDim2.new(0,36,0,24)
 CloseBtn.Position = UDim2.new(0,54,0,0)
 CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
 
--- Sidebar (original categories + empty "Hackers")
+-- Sidebar (original categories + "Hackers")
 local Sidebar = Instance.new("Frame", MainFrame)
 Sidebar.Name = "Sidebar"
 Sidebar.Size = UDim2.new(0,200,1, -40)
@@ -1618,7 +1653,148 @@ local function clearContent()
     for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") or v:IsA("TextLabel") then safeDestroy(v) end end
 end
 
+-- ======================
+-- WalkSpeed GUI (kept as optional panel but Hackers tab will only show the single input)
+-- ======================
+local WalkSpeedActive = false
+local ws_frame = nil
+local ws_numBox = nil
+local ws_plus = nil
+local ws_minus = nil
+local ws_number = nil
+local ws_humanoid = nil
+local ws_editing = false
+local ws_charConn = nil
+local ws_humPropConn = nil
+
+local function ws_UpdateNum()
+    if ws_numBox then
+        ws_numBox.Text = tostring(ws_number or 16)
+    end
+    if ws_humanoid and ws_number then
+        pcall(function() ws_humanoid.WalkSpeed = ws_number end)
+    end
+end
+
+local function ws_onCharacterAdded(character)
+    if ws_humPropConn then
+        pcall(function() ws_humPropConn:Disconnect() end)
+        ws_humPropConn = nil
+    end
+    ws_humanoid = nil
+    if not character then return end
+    ws_humanoid = character:FindFirstChildOfClass("Humanoid")
+    if ws_humanoid then
+        ws_number = ws_humanoid.WalkSpeed or 16
+        ws_humPropConn = ws_humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if ws_humanoid and ws_number and ws_humanoid.WalkSpeed ~= ws_number then
+                pcall(function() ws_humanoid.WalkSpeed = ws_number end)
+            end
+        end)
+    else
+        ws_number = 16
+    end
+    ws_UpdateNum()
+end
+
+local function createWalkSpeedPanel()
+    if ws_frame and ws_frame.Parent then return end
+    ws_frame = Instance.new("Frame", ScreenGui)
+    ws_frame.Name = "FTF_WalkSpeedPanel"
+    ws_frame.Size = UDim2.new(0, 200, 0, 100)
+    ws_frame.Position = UDim2.new(0.5, -100, 0.5, -50)
+    ws_frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    ws_frame.Active = true
+    pcall(function() ws_frame.Draggable = true end)
+
+    local corner = Instance.new("UICorner", ws_frame); corner.CornerRadius = UDim.new(0,8)
+
+    ws_numBox = Instance.new("TextBox", ws_frame)
+    ws_numBox.Size = UDim2.new(0.6, 0, 0.6, 0)
+    ws_numBox.Position = UDim2.new(0.2, 0, 0.3, 0)
+    ws_numBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    ws_numBox.TextColor3 = Color3.new(1, 1, 1)
+    ws_numBox.TextScaled = true
+    ws_numBox.Font = Enum.Font.SourceSans
+    ws_numBox.ClearTextOnFocus = true
+
+    ws_plus = Instance.new("TextButton", ws_frame)
+    ws_plus.Size = UDim2.new(0.2, 0, 0.6, 0)
+    ws_plus.Position = UDim2.new(0.8, 0, 0.3, 0)
+    ws_plus.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    ws_plus.TextColor3 = Color3.new(1, 1, 1)
+    ws_plus.TextScaled = true
+    ws_plus.Font = Enum.Font.SourceSans
+    ws_plus.Text = "+"
+
+    ws_minus = Instance.new("TextButton", ws_frame)
+    ws_minus.Size = UDim2.new(0.2, 0, 0.6, 0)
+    ws_minus.Position = UDim2.new(0, 0, 0.3, 0)
+    ws_minus.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    ws_minus.TextColor3 = Color3.new(1, 1, 1)
+    ws_minus.TextScaled = true
+    ws_minus.Font = Enum.Font.SourceSans
+    ws_minus.Text = "-"
+
+    ws_plus.MouseButton1Click:Connect(function()
+        ws_number = (ws_number or 16) + 1
+        ws_UpdateNum()
+    end)
+    ws_minus.MouseButton1Click:Connect(function()
+        if (ws_number or 0) > 0 then
+            ws_number = ws_number - 1
+            ws_UpdateNum()
+        end
+    end)
+
+    ws_numBox.Focused:Connect(function()
+        ws_editing = true
+    end)
+    ws_numBox.FocusLost:Connect(function(enter)
+        ws_editing = false
+        if enter then
+            local Value = tonumber(ws_numBox.Text)
+            if Value and Value > 0 then
+                ws_number = Value
+                ws_UpdateNum()
+            else
+                ws_UpdateNum()
+            end
+        end
+    end)
+
+    if LocalPlayer.Character then
+        ws_onCharacterAdded(LocalPlayer.Character)
+    end
+    if ws_charConn then pcall(function() ws_charConn:Disconnect() end) end
+    ws_charConn = LocalPlayer.CharacterAdded:Connect(ws_onCharacterAdded)
+end
+
+local function destroyWalkSpeedPanel()
+    if ws_charConn then pcall(function() ws_charConn:Disconnect() end); ws_charConn = nil end
+    if ws_humPropConn then pcall(function() ws_humPropConn:Disconnect() end); ws_humPropConn = nil end
+    if ws_frame then safeDestroy(ws_frame); ws_frame = nil end
+    ws_numBox = nil; ws_plus = nil; ws_minus = nil
+    ws_number = nil; ws_humanoid = nil; ws_editing = false
+end
+
+local function enableWalkSpeedGUI()
+    if WalkSpeedActive then return true end
+    WalkSpeedActive = true
+    createWalkSpeedPanel()
+    return true
+end
+
+local function disableWalkSpeedGUI()
+    if not WalkSpeedActive then return false end
+    WalkSpeedActive = false
+    destroyWalkSpeedPanel()
+    return false
+end
+
+-- ======================
 -- Tab builders
+-- ======================
 local function buildTexturesTab()
     clearContent()
     local tb1, set1 = createToggle(ContentScroll, "Ativar Textures Tijolos Brancos", WhiteBrickActive, function()
@@ -1760,7 +1936,9 @@ local function buildTeleportTab()
     end
 end
 
--- Tab behaviour
+-- ======================
+-- Tab behaviour (including Hackers tab with quick WalkSpeed input only)
+-- ======================
 local currentTab = tabNames[1]
 
 local function setActiveTab(name)
@@ -1785,8 +1963,84 @@ local function setActiveTab(name)
     elseif currentTab == "Teleport" then
         pcall(buildTeleportTab)
     elseif currentTab == "Hackers" then
-        -- intentionally empty category: leave content blank
         clearContent()
+
+        -- input row for WalkSpeed value (single input only)
+        local row = Instance.new("Frame", ContentScroll)
+        row.Size = UDim2.new(0.95, 0, 0, 44)
+        row.BackgroundColor3 = Color3.fromRGB(28,28,28)
+        local rowCorner = Instance.new("UICorner", row); rowCorner.CornerRadius = UDim.new(0,10)
+
+        local label = Instance.new("TextLabel", row)
+        label.Size = UDim2.new(1, -160, 1, 0)
+        label.Position = UDim2.new(0, 12, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.Gotham
+        label.TextSize = 14
+        label.TextColor3 = Color3.fromRGB(210,210,210)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Text = "WalkSpeed (valor)"
+
+        local tb = Instance.new("TextBox", row)
+        tb.Size = UDim2.new(0, 100, 0, 28)
+        tb.Position = UDim2.new(1, -160, 0.5, -14)
+        tb.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        tb.TextColor3 = Color3.fromRGB(240,240,240)
+        tb.Font = Enum.Font.SourceSans
+        tb.TextSize = 18
+        tb.TextScaled = false
+        tb.ClearTextOnFocus = true
+        tb.PlaceholderText = "Ex: 16"
+
+        -- populate with current value (fallback to 16)
+        local function getCurrentWalkSpeed()
+            local cur = ws_number
+            if not cur then
+                local char = LocalPlayer.Character
+                if char then
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.WalkSpeed then cur = hum.WalkSpeed end
+                end
+            end
+            return cur or 16
+        end
+        tb.Text = tostring(getCurrentWalkSpeed())
+
+        local applyBtn = Instance.new("TextButton", row)
+        applyBtn.Size = UDim2.new(0, 72, 0, 28)
+        applyBtn.Position = UDim2.new(1, -86, 0.5, -14)
+        applyBtn.BackgroundColor3 = Color3.fromRGB(38,120,190)
+        applyBtn.Font = Enum.Font.GothamBold
+        applyBtn.TextSize = 14
+        applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+        applyBtn.Text = "Aplicar"
+        local applyCorner = Instance.new("UICorner", applyBtn); applyCorner.CornerRadius = UDim.new(0,8)
+
+        local function applyValueFromTextbox()
+            local v = tonumber(tb.Text)
+            if v and v > 0 then
+                ws_number = v -- store for the optional walkspeed panel
+                -- try to apply to current humanoid
+                local char = LocalPlayer.Character
+                if char then
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        pcall(function() hum.WalkSpeed = ws_number end)
+                    end
+                end
+                tb.Text = tostring(ws_number)
+            else
+                tb.Text = tostring(getCurrentWalkSpeed())
+            end
+        end
+
+        applyBtn.MouseButton1Click:Connect(applyValueFromTextbox)
+        tb.FocusLost:Connect(function(enterPressed)
+            if enterPressed then applyValueFromTextbox() end
+        end)
+
+        row.LayoutOrder = 1
+
     else
         clearContent()
     end
@@ -1871,7 +2125,7 @@ task.spawn(function()
     menuOpen = true
 end)
 
--- Expose toggles and utilities globally (same as original)
+-- Expose toggles and utilities globally (same as original) + WalkSpeed
 _G.FTF = _G.FTF or {}
 _G.FTF.EnablePlayerESP = enablePlayerESP
 _G.FTF.DisablePlayerESP = disablePlayerESP
@@ -1887,5 +2141,7 @@ _G.FTF.EnableBeastPowerTime = enableBeastPowerTime
 _G.FTF.DisableBeastPowerTime = disableBeastPowerTime
 _G.FTF.EnableComputerProgress = enableComputerProgress
 _G.FTF.DisableComputerProgress = disableComputerProgress
+_G.FTF.EnableWalkSpeedGUI = enableWalkSpeedGUI
+_G.FTF.DisableWalkSpeedGUI = disableWalkSpeedGUI
 
-print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained. 'Hackers' category present and WalkSpeed removed.")
+print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained. 'Hackers' category now contains WalkSpeed quick input.")
