@@ -1,4 +1,8 @@
 -- FTF ESP — By David
+-- Integrated Contador de Down, BeastPower Time and Computer ProgressBar (toggleable)
+-- Updated: Computer ESP replaced with the method you provided (fixed), menu/draggable/UI kept as requested.
+-- Removed WalkSpeed UI from "Hackers" category per request; "Hackers" remains an empty category.
+
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
 local REMOVE_TEXTURES_BATCH = 250
@@ -49,6 +53,7 @@ ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent or ScreenGui.Parent ~= CoreGui then ScreenGui.Parent = PlayerGui end
 
+-- Generic highlight creator (used by several features)
 local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outlineTrans)
     if not adornee then return nil end
     local h = Instance.new("Highlight")
@@ -62,6 +67,9 @@ local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outl
     return h
 end
 
+-- ======================
+-- Player ESP
+-- ======================
 local PlayerESPEnabled = false
 local playerHighlights = {}
 local playerNameTags = {}
@@ -139,6 +147,10 @@ Players.PlayerAdded:Connect(function(p)
 end)
 Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
+-- ======================
+-- Computer ESP (USER METHOD: replaced to fix bug)
+-- This matches the method you supplied (computer_monitor.lua) — wired per-model, connects Changed events, updates highlight color from Screen part.
+-- ======================
 local ComputerESPEnabled = false
 local computerInfo = {}
 
@@ -1450,7 +1462,7 @@ CloseBtn.Size = UDim2.new(0,36,0,24)
 CloseBtn.Position = UDim2.new(0,54,0,0)
 CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
 
--- Sidebar (original categories)
+-- Sidebar (original categories + empty "Hackers")
 local Sidebar = Instance.new("Frame", MainFrame)
 Sidebar.Name = "Sidebar"
 Sidebar.Size = UDim2.new(0,200,1, -40)
@@ -1463,7 +1475,8 @@ sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
 sideLayout.Padding = UDim.new(0,12)
 
-local tabNames = {"ESP","Textures","Timers","Teleport"}
+-- include "Hackers" category
+local tabNames = {"ESP","Textures","Timers","Teleport","Hackers"}
 
 local Tabs = {}
 local function createSidebarButton(parent, text)
@@ -1602,9 +1615,10 @@ local function createButton(parent, labelText, btnText, callback)
 end
 
 local function clearContent()
-    for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") then safeDestroy(v) end end
+    for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") or v:IsA("TextLabel") then safeDestroy(v) end end
 end
 
+-- Tab builders
 local function buildTexturesTab()
     clearContent()
     local tb1, set1 = createToggle(ContentScroll, "Ativar Textures Tijolos Brancos", WhiteBrickActive, function()
@@ -1770,6 +1784,9 @@ local function setActiveTab(name)
         pcall(buildTimersTab)
     elseif currentTab == "Teleport" then
         pcall(buildTeleportTab)
+    elseif currentTab == "Hackers" then
+        -- intentionally empty category: leave content blank
+        clearContent()
     else
         clearContent()
     end
@@ -1871,4 +1888,4 @@ _G.FTF.DisableBeastPowerTime = disableBeastPowerTime
 _G.FTF.EnableComputerProgress = enableComputerProgress
 _G.FTF.DisableComputerProgress = disableComputerProgress
 
-print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained.")
+print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained. 'Hackers' category present and WalkSpeed removed.")
