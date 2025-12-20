@@ -1,5 +1,6 @@
 -- FTF ESP — By David
--- Integrated Contador de Down and BeastPower Time (toggleable)
+-- Integrated Contador de Down, BeastPower Time and Computer ProgressBar (toggleable)
+
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
 local REMOVE_TEXTURES_BATCH = 250
@@ -11,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
@@ -138,8 +140,12 @@ Players.PlayerAdded:Connect(function(p)
 end)
 Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
+-- ===== Computer Esp (substituted implementation as requested) =====
+pcall(function() script.Name = "Computer Esp" end)
+
 local ComputerESPEnabled = false
 local computerInfo = {}
+local compAddedConn, compRemovedConn
 
 local function isComputerCandidate(model)
     if not model or not model:IsA("Model") then return false end
@@ -149,17 +155,17 @@ end
 
 local function getModelState(model)
     if not model then return nil end
-    local boolNames = {"Hacked","IsHacked","HackedValue"}
+    local boolNames = {"Hacked", "IsHacked", "HackedValue"}
     for _,n in ipairs(boolNames) do
         local v = model:FindFirstChild(n, true)
         if v and v:IsA("BoolValue") then return v.Value and "hacked" or "ready" end
     end
-    local strNames = {"State","HackState","Status","Phase"}
+    local strNames = {"State", "HackState", "Status", "Phase"}
     for _,n in ipairs(strNames) do
         local s = model:FindFirstChild(n, true)
         if s and s:IsA("StringValue") then return tostring(s.Value):lower() end
     end
-    local intNames = {"State","StateValue","HackProgress","Progress"}
+    local intNames = {"State", "StateValue", "HackProgress", "Progress"}
     for _,n in ipairs(intNames) do
         local iv = model:FindFirstChild(n, true)
         if iv and iv:IsA("IntValue") then
@@ -168,7 +174,7 @@ local function getModelState(model)
             return tostring(iv.Value)
         end
     end
-    local attrs = {"HackState","State","Status"}
+    local attrs = {"HackState", "State", "Status"}
     for _,a in ipairs(attrs) do
         local at = model:GetAttribute(a)
         if at ~= nil then return tostring(at):lower() end
@@ -177,18 +183,37 @@ local function getModelState(model)
 end
 
 local function stateColorsFor(s)
-    if not s then return Color3.fromRGB(120,200,255), Color3.fromRGB(20,40,80) end
+    if not s then return Color3.fromRGB(120, 200, 255), Color3.fromRGB(20, 40, 80) end
     s = tostring(s):lower()
     if s:find("ready") or s:find("avail") then
-        return Color3.fromRGB(80,150,255), Color3.fromRGB(20,40,80)
+        return Color3.fromRGB(80, 150, 255), Color3.fromRGB(20, 40, 80)
     elseif s:find("hacked") or s:find("done") or s:find("complete") or s == "1" then
-        return Color3.fromRGB(90,230,120), Color3.fromRGB(16,80,24)
+        return Color3.fromRGB(90, 230, 120), Color3.fromRGB(16, 80, 24)
     elseif s:find("wrong") or s:find("failed") or s:find("error") or s == "-1" then
-        return Color3.fromRGB(255,80,80), Color3.fromRGB(120,24,24)
+        return Color3.fromRGB(255, 80, 80), Color3.fromRGB(120, 24, 24)
     elseif s:find("progress") or s:find("hacking") then
-        return Color3.fromRGB(255,200,90), Color3.fromRGB(130,90,20)
+        return Color3.fromRGB(255, 200, 90), Color3.fromRGB(130, 90, 20)
     else
-        return Color3.fromRGB(120,200,255), Color3.fromRGB(20,40,80)
+        return Color3.fromRGB(120, 200, 255), Color3.fromRGB(20, 40, 80)
+    end
+end
+
+local function createHighlightForComputer(model, fillColor, outlineColor, transparency, outlineTransparency)
+    local highlight = Instance.new("Highlight")
+    highlight.Adornee = model
+    highlight.FillColor = fillColor
+    highlight.OutlineColor = outlineColor
+    highlight.FillTransparency = transparency or 0.06
+    highlight.OutlineTransparency = outlineTransparency or 0
+    highlight.Parent = Workspace
+    return highlight
+end
+
+local function updateHighlightColorFromScreen(model, highlight)
+    local screen = model:FindFirstChild("Screen")
+    if screen and screen:IsA("BasePart") then
+        highlight.FillColor = screen.Color
+        highlight.OutlineColor = screen.Color:Lerp(Color3.fromRGB(0, 0, 0), 0.5)
     end
 end
 
@@ -197,41 +222,66 @@ local function updateComputerVisual(model)
     local info = computerInfo[model] or {}
     local state = getModelState(model)
     local fill, outline = stateColorsFor(state)
+
     if info.highlight and info.highlight.Parent then
         info.highlight.FillColor = fill
         info.highlight.OutlineColor = outline
     else
-        info.highlight = createHighlight(model, fill, outline, 0.06, 0)
+        info.highlight = createHighlightForComputer(model, fill, outline, 0.06, 0)
     end
+
+    updateHighlightColorFromScreen(model, info.highlight)
+
     computerInfo[model] = info
 end
 
 local function wireComputerModel(model)
     if not model then return end
     local info = computerInfo[model] or { conns = {} }
-    if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
+
+    if info.conns then 
+        for _, c in ipairs(info.conns) do 
+            pcall(function() c:Disconnect() end)
+        end 
+    end
     info.conns = {}
+
     local function tryWire(obj)
         if obj:IsA("BoolValue") or obj:IsA("StringValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
             local c = obj.Changed:Connect(function() updateComputerVisual(model) end)
             table.insert(info.conns, c)
         end
     end
-    for _,d in ipairs(model:GetDescendants()) do tryWire(d) end
-    local addConn = model.DescendantAdded:Connect(function(d) tryWire(d); updateComputerVisual(model) end)
+
+    for _, d in ipairs(model:GetDescendants()) do tryWire(d) end
+
+    local addConn = model.DescendantAdded:Connect(function(d)
+        tryWire(d)
+        updateComputerVisual(model)
+    end)
     table.insert(info.conns, addConn)
+
     computerInfo[model] = info
 end
 
-local compAddedConn, compRemovedConn
+local function scanAndWireExistingComputers()
+    for _, d in ipairs(Workspace:GetDescendants()) do
+        if d:IsA("Model") and isComputerCandidate(d) then
+            pcall(function()
+                updateComputerVisual(d)
+                wireComputerModel(d)
+            end)
+        end
+    end
+end
+
 local function enableComputerESP()
     if ComputerESPEnabled then return true end
     ComputerESPEnabled = true
-    for _,d in ipairs(Workspace:GetDescendants()) do
-        if d:IsA("Model") and isComputerCandidate(d) then
-            pcall(function() updateComputerVisual(d); wireComputerModel(d) end)
-        end
-    end
+
+    -- initial scan
+    scanAndWireExistingComputers()
+
     compAddedConn = Workspace.DescendantAdded:Connect(function(obj)
         if not ComputerESPEnabled then return end
         if obj:IsA("Model") and isComputerCandidate(obj) then
@@ -241,29 +291,43 @@ local function enableComputerESP()
             if mdl and isComputerCandidate(mdl) then pcall(function() updateComputerVisual(mdl); wireComputerModel(mdl) end) end
         end
     end)
+
     compRemovedConn = Workspace.DescendantRemoving:Connect(function(obj)
         if obj:IsA("Model") and computerInfo[obj] then
             local info = computerInfo[obj]
             if info.highlight then safeDestroy(info.highlight) end
-            if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
+            if info.conns then 
+                for _, c in ipairs(info.conns) do 
+                    pcall(function() c:Disconnect() end) 
+                end 
+            end
             computerInfo[obj] = nil
         end
     end)
+
     return true
 end
 
 local function disableComputerESP()
     if not ComputerESPEnabled then return false end
     ComputerESPEnabled = false
+
     if compAddedConn then pcall(function() compAddedConn:Disconnect() end); compAddedConn = nil end
     if compRemovedConn then pcall(function() compRemovedConn:Disconnect() end); compRemovedConn = nil end
-    for mdl,info in pairs(computerInfo) do
+
+    for mdl, info in pairs(computerInfo) do
         if info.highlight then safeDestroy(info.highlight) end
-        if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
+        if info.conns then
+            for _, c in ipairs(info.conns) do
+                pcall(function() c:Disconnect() end)
+            end
+        end
         computerInfo[mdl] = nil
     end
+
     return false
 end
+-- ===== end Computer Esp =====
 
 local FreezeESPEnabled = false
 local freezeHighlights = {}
@@ -1054,6 +1118,203 @@ local function disableBeastPowerTime()
     return false
 end
 
+-- Computer ProgressBar feature (toggleable)
+local ComputerProgressActive = false
+local computerProgress = {
+    heartbeatConns = {}, -- model -> conn
+    reloadTask = nil,
+    playerAddedConn = nil,
+    active = false
+}
+
+local function createProgressBar(parent)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ProgressBar"
+    billboard.Adornee = parent
+    billboard.Size = UDim2.new(0, 120, 0, 12)
+    billboard.StudsOffset = Vector3.new(0, 4.2, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Enabled = true
+    billboard.Parent = parent
+
+    local background = Instance.new("Frame")
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    background.BorderSizePixel = 2
+    background.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    background.Parent = billboard
+
+    local bar = Instance.new("Frame")
+    bar.Name = "Bar"
+    bar.Size = UDim2.new(0, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    bar.BorderSizePixel = 0
+    bar.Parent = background
+
+    local text = Instance.new("TextLabel")
+    text.Name = "ProgressText"
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    text.TextStrokeTransparency = 0
+    text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    text.TextScaled = true
+    text.Font = Enum.Font.SciFi
+    text.Text = "0.0%"
+    text.Parent = background
+
+    return billboard, bar, text
+end
+
+local function setupComputerProgress(tableModel)
+    if not ComputerProgressActive then return end
+    if tableModel:FindFirstChild("ProgressBar") then return end
+
+    local billboard, bar, text = createProgressBar(tableModel)
+    local highlight = tableModel:FindFirstChildOfClass("Highlight") or Instance.new("Highlight")
+    highlight.Name = "ComputerHighlight"
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Enabled = true
+    highlight.Parent = tableModel
+
+    local savedProgress = 0
+
+    -- ensure we don't create multiple heartbeat connections for same model
+    if computerProgress.heartbeatConns[tableModel] then return end
+
+    local conn = RunService.Heartbeat:Connect(function()
+        if not ComputerProgressActive then return end
+
+        local screen = tableModel:FindFirstChild("Screen")
+        if screen and screen:IsA("BasePart") then
+            highlight.FillColor = screen.Color
+            highlight.OutlineColor = screen.Color
+        end
+
+        local highestTouch = 0
+        for _, part in ipairs(tableModel:GetChildren()) do
+            if part:IsA("BasePart") and part.Name:match("^ComputerTrigger") then
+                for _, touchingPart in ipairs(part:GetTouchingParts()) do
+                    local plr = Players:GetPlayerFromCharacter(touchingPart.Parent)
+                    if plr then
+                        local tpsm = plr:FindFirstChild("TempPlayerStatsModule")
+                        if tpsm then
+                            local ragdoll = tpsm:FindFirstChild("Ragdoll")
+                            local ap = tpsm:FindFirstChild("ActionProgress")
+                            if ragdoll and typeof(ragdoll.Value) == "boolean" and not ragdoll.Value then
+                                if ap and typeof(ap.Value) == "number" then
+                                    highestTouch = math.max(highestTouch, ap.Value)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        savedProgress = math.max(savedProgress, highestTouch)
+        bar.Size = UDim2.new(savedProgress, 0, 1, 0)
+
+        if savedProgress >= 1 then
+            bar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            text.Text = "COMPLETED"
+        else
+            bar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            text.Text = string.format("%.1f%%", math.floor(savedProgress * 200 + 0.1) / 2)
+        end
+    end)
+
+    computerProgress.heartbeatConns[tableModel] = conn
+end
+
+local function teardownComputerProgress(tableModel)
+    if not tableModel then return end
+    if computerProgress.heartbeatConns[tableModel] then
+        pcall(function() computerProgress.heartbeatConns[tableModel]:Disconnect() end)
+        computerProgress.heartbeatConns[tableModel] = nil
+    end
+    local pb = tableModel:FindFirstChild("ProgressBar")
+    if pb then safeDestroy(pb) end
+    local hl = tableModel:FindFirstChild("ComputerHighlight")
+    if hl and hl:IsA("Highlight") then safeDestroy(hl) end
+end
+
+local function reloadComputersTask()
+    -- immediate first run then loop
+    local function scanMap()
+        local ok, currentMap = pcall(function() return ReplicatedStorage:FindFirstChild("CurrentMap") end)
+        if not ok or not currentMap then return end
+        local mapValue = currentMap.Value
+        if mapValue and tostring(mapValue) ~= "" then
+            local map = Workspace:FindFirstChild(tostring(mapValue))
+            if map then
+                for _, obj in ipairs(map:GetChildren()) do
+                    if obj.Name == "ComputerTable" and obj:IsA("Model") then
+                        pcall(function() setupComputerProgress(obj) end)
+                    end
+                end
+            end
+        end
+    end
+
+    scanMap()
+    while ComputerProgressActive do
+        scanMap()
+        task.wait(1)
+    end
+end
+
+local function enableComputerProgress()
+    if ComputerProgressActive then return true end
+    ComputerProgressActive = true
+    computerProgress.active = true
+
+    -- scan existing map immediately
+    spawn(reloadComputersTask)
+
+    -- also attach PlayerAdded handler to create labels for new players (not strictly necessary here)
+    computerProgress.playerAddedConn = Players.PlayerAdded:Connect(function(pl)
+        -- create progress bars for any existing computers touching new player will be handled by heartbeat
+        -- no op
+    end)
+
+    return true
+end
+
+local function disableComputerProgress()
+    if not ComputerProgressActive then return false end
+    ComputerProgressActive = false
+    computerProgress.active = false
+
+    if computerProgress.playerAddedConn then
+        pcall(function() computerProgress.playerAddedConn:Disconnect() end)
+        computerProgress.playerAddedConn = nil
+    end
+
+    for model, conn in pairs(computerProgress.heartbeatConns) do
+        pcall(function() conn:Disconnect() end)
+    end
+    computerProgress.heartbeatConns = {}
+
+    -- teardown any remaining progress GUIs in workspace (only for ComputerTable models found)
+    local ok, currentMap = pcall(function() return ReplicatedStorage:FindFirstChild("CurrentMap") end)
+    if ok and currentMap then
+        local mapName = currentMap.Value
+        if mapName and tostring(mapName) ~= "" then
+            local map = Workspace:FindFirstChild(tostring(mapName))
+            if map then
+                for _, obj in ipairs(map:GetChildren()) do
+                    if obj.Name == "ComputerTable" and obj:IsA("Model") then
+                        pcall(function() teardownComputerProgress(obj) end)
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 local LoadingPanel = Instance.new("Frame", ScreenGui)
 LoadingPanel.Name = "FTF_LoadingPanel"
 LoadingPanel.Size = UDim2.new(0,420,0,120)
@@ -1319,7 +1580,7 @@ local function buildESPTab()
     end)
     a1.LayoutOrder = order; order = order + 1
 
-    local a2, _ = createToggle(ContentScroll, "ESP PCs (state colors)", ComputerESPEnabled, function()
+    local a2, _ = createToggle(ContentScroll, "Computer ESP", ComputerESPEnabled, function()
         if ComputerESPEnabled then
             disableComputerESP()
             return false
@@ -1376,6 +1637,17 @@ local function buildTimersTab()
         end
     end)
     tb2.LayoutOrder = 2
+
+    local tb3, set3 = createToggle(ContentScroll, "Computer ProgressBar", ComputerProgressActive, function()
+        if ComputerProgressActive then
+            disableComputerProgress()
+            return false
+        else
+            enableComputerProgress()
+            return true
+        end
+    end)
+    tb3.LayoutOrder = 3
 end
 
 local function buildTeleportTab()
@@ -1462,5 +1734,7 @@ _G.FTF.EnableRagdollCountdown = enableRagdollCountdown
 _G.FTF.DisableRagdollCountdown = disableRagdollCountdown
 _G.FTF.EnableBeastPowerTime = enableBeastPowerTime
 _G.FTF.DisableBeastPowerTime = disableBeastPowerTime
+_G.FTF.EnableComputerProgress = enableComputerProgress
+_G.FTF.DisableComputerProgress = disableComputerProgress
 
-print("[FTF_ESP] Script loaded — toggles start immediately without added waits.")
+print("[FTF_ESP] Script loaded — Contador de Down, BeastPower Time and Computer ProgressBar integrated.")
