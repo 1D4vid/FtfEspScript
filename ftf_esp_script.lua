@@ -1,5 +1,4 @@
 -- FTF ESP — By David
-
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
 local REMOVE_TEXTURES_BATCH = 250
@@ -62,6 +61,7 @@ local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outl
     return h
 end
 
+-- Player ESP
 local PlayerESPEnabled = false
 local playerHighlights = {}
 local playerNameTags = {}
@@ -139,30 +139,30 @@ Players.PlayerAdded:Connect(function(p)
 end)
 Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
--- Computer Esp (replaces previous "ESP PCs")
+-- Computer Esp (replaces old PC ESP)
 local ComputerESPEnabled = false
 local computerInfo = {}
 local compAddedConn, compRemovedConn
 
-local function isComputerCandidate_new(model)
+local function isComputerCandidate(model)
     if not model or not model:IsA("Model") then return false end
     local lower = model.Name:lower()
     return lower:find("computer") or lower:find("pc") or lower:find("terminal") or lower:find("console")
 end
 
-local function getModelState_new(model)
+local function getModelState(model)
     if not model then return nil end
-    local boolNames = {"Hacked", "IsHacked", "HackedValue"}
+    local boolNames = {"Hacked","IsHacked","HackedValue"}
     for _,n in ipairs(boolNames) do
         local v = model:FindFirstChild(n, true)
         if v and v:IsA("BoolValue") then return v.Value and "hacked" or "ready" end
     end
-    local strNames = {"State", "HackState", "Status", "Phase"}
+    local strNames = {"State","HackState","Status","Phase"}
     for _,n in ipairs(strNames) do
         local s = model:FindFirstChild(n, true)
         if s and s:IsA("StringValue") then return tostring(s.Value):lower() end
     end
-    local intNames = {"State", "StateValue", "HackProgress", "Progress"}
+    local intNames = {"State","StateValue","HackProgress","Progress"}
     for _,n in ipairs(intNames) do
         local iv = model:FindFirstChild(n, true)
         if iv and iv:IsA("IntValue") then
@@ -171,7 +171,7 @@ local function getModelState_new(model)
             return tostring(iv.Value)
         end
     end
-    local attrs = {"HackState", "State", "Status"}
+    local attrs = {"HackState","State","Status"}
     for _,a in ipairs(attrs) do
         local at = model:GetAttribute(a)
         if at ~= nil then return tostring(at):lower() end
@@ -179,128 +179,219 @@ local function getModelState_new(model)
     return nil
 end
 
-local function stateColorsFor_new(s)
-    if not s then return Color3.fromRGB(120, 200, 255), Color3.fromRGB(20, 40, 80) end
+local function stateColorsFor(s)
+    if not s then return Color3.fromRGB(120,200,255), Color3.fromRGB(20,40,80) end
     s = tostring(s):lower()
     if s:find("ready") or s:find("avail") then
-        return Color3.fromRGB(80, 150, 255), Color3.fromRGB(20, 40, 80)
+        return Color3.fromRGB(80,150,255), Color3.fromRGB(20,40,80)
     elseif s:find("hacked") or s:find("done") or s:find("complete") or s == "1" then
-        return Color3.fromRGB(90, 230, 120), Color3.fromRGB(16, 80, 24)
+        return Color3.fromRGB(90,230,120), Color3.fromRGB(16,80,24)
     elseif s:find("wrong") or s:find("failed") or s:find("error") or s == "-1" then
-        return Color3.fromRGB(255, 80, 80), Color3.fromRGB(120, 24, 24)
+        return Color3.fromRGB(255,80,80), Color3.fromRGB(120,24,24)
     elseif s:find("progress") or s:find("hacking") then
-        return Color3.fromRGB(255, 200, 90), Color3.fromRGB(130, 90, 20)
+        return Color3.fromRGB(255,200,90), Color3.fromRGB(130,90,20)
     else
-        return Color3.fromRGB(120, 200, 255), Color3.fromRGB(20, 40, 80)
+        return Color3.fromRGB(120,200,255), Color3.fromRGB(20,40,80)
     end
 end
 
-local function createHighlight_new(model, fillColor, outlineColor, transparency, outlineTransparency)
-    local highlight = Instance.new("Highlight")
-    highlight.Adornee = model
-    highlight.FillColor = fillColor
-    highlight.OutlineColor = outlineColor
-    highlight.FillTransparency = transparency
-    highlight.OutlineTransparency = outlineTransparency
-    highlight.Parent = workspace
-    return highlight
-end
-
-local function updateHighlightColorFromScreen_new(model, highlight)
-    local screen = model:FindFirstChild("Screen")
-    if screen and screen:IsA("BasePart") then
-        highlight.FillColor = screen.Color
-        highlight.OutlineColor = screen.Color:Lerp(Color3.fromRGB(0,0,0), 0.5)
-    end
-end
-
-local function updateComputerVisual_new(model)
+local function updateComputerVisual(model)
     if not model then return end
     local info = computerInfo[model] or {}
-    local state = getModelState_new(model)
-    local fill, outline = stateColorsFor_new(state)
-
+    local state = getModelState(model)
+    local fill, outline = stateColorsFor(state)
     if info.highlight and info.highlight.Parent then
         info.highlight.FillColor = fill
         info.highlight.OutlineColor = outline
     else
-        info.highlight = createHighlight_new(model, fill, outline, 0.06, 0)
+        info.highlight = createHighlight(model, fill, outline, 0.06, 0)
     end
-
-    updateHighlightColorFromScreen_new(model, info.highlight)
+    -- prefer using screen color if present
+    local screen = model:FindFirstChild("Screen")
+    if screen and screen:IsA("BasePart") then
+        info.highlight.FillColor = screen.Color
+        info.highlight.OutlineColor = screen.Color:Lerp(Color3.fromRGB(0,0,0), 0.5)
+    end
     computerInfo[model] = info
 end
 
-local function wireComputerModel_new(model)
+local function wireComputerModel(model)
     if not model then return end
     local info = computerInfo[model] or { conns = {} }
-    if info.conns then for _, c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
+    if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
     info.conns = {}
-
     local function tryWire(obj)
         if obj:IsA("BoolValue") or obj:IsA("StringValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
-            local c = obj.Changed:Connect(function() updateComputerVisual_new(model) end)
+            local c = obj.Changed:Connect(function() updateComputerVisual(model) end)
             table.insert(info.conns, c)
         end
     end
-
-    for _, d in ipairs(model:GetDescendants()) do tryWire(d) end
-
-    local addConn = model.DescendantAdded:Connect(function(d)
-        tryWire(d)
-        updateComputerVisual_new(model)
-    end)
+    for _,d in ipairs(model:GetDescendants()) do tryWire(d) end
+    local addConn = model.DescendantAdded:Connect(function(d) tryWire(d); updateComputerVisual(model) end)
     table.insert(info.conns, addConn)
-
     computerInfo[model] = info
 end
 
 local function enableComputerESP()
     if ComputerESPEnabled then return true end
     ComputerESPEnabled = true
-
-    for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("Model") and isComputerCandidate_new(d) then
-            pcall(function() updateComputerVisual_new(d); wireComputerModel_new(d) end)
+    for _,d in ipairs(Workspace:GetDescendants()) do
+        if d:IsA("Model") and isComputerCandidate(d) then
+            pcall(function() updateComputerVisual(d); wireComputerModel(d) end)
         end
     end
-
-    compAddedConn = workspace.DescendantAdded:Connect(function(obj)
+    compAddedConn = Workspace.DescendantAdded:Connect(function(obj)
         if not ComputerESPEnabled then return end
-        if obj:IsA("Model") and isComputerCandidate_new(obj) then
-            pcall(function() updateComputerVisual_new(obj); wireComputerModel_new(obj) end)
+        if obj:IsA("Model") and isComputerCandidate(obj) then
+            pcall(function() updateComputerVisual(obj); wireComputerModel(obj) end)
         end
     end)
-
-    compRemovedConn = workspace.DescendantRemoving:Connect(function(obj)
+    compRemovedConn = Workspace.DescendantRemoving:Connect(function(obj)
         if obj:IsA("Model") and computerInfo[obj] then
             local info = computerInfo[obj]
             if info.highlight then safeDestroy(info.highlight) end
-            if info.conns then for _, c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
+            if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
             computerInfo[obj] = nil
         end
     end)
-
     return true
 end
 
 local function disableComputerESP()
     if not ComputerESPEnabled then return false end
     ComputerESPEnabled = false
-
     if compAddedConn then pcall(function() compAddedConn:Disconnect() end); compAddedConn = nil end
     if compRemovedConn then pcall(function() compRemovedConn:Disconnect() end); compRemovedConn = nil end
-
-    for mdl, info in pairs(computerInfo) do
+    for mdl,info in pairs(computerInfo) do
         if info.highlight then safeDestroy(info.highlight) end
-        if info.conns then for _, c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
+        if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
         computerInfo[mdl] = nil
     end
-
     return false
 end
 
--- White Brick / Snow / RemoveTextures (kept as before)
+-- Freeze pod ESP (improved detection)
+local FreezeESPEnabled = false
+local freezeHighlights = {}
+local freezeAddedConn, freezeRemovedConn
+
+local function isFreezePodModel(obj)
+    if not obj then return false end
+    local function nameMatches(n)
+        n = (n or ""):lower()
+        if n:find("freezepod") then return true end
+        if n:find("freeze") and (n:find("pod") or n:find("capsule")) then return true end
+        return false
+    end
+    if obj:IsA("Model") then
+        if nameMatches(obj.Name) then return true end
+        for _,d in ipairs(obj:GetDescendants()) do
+            if d:IsA("BasePart") and nameMatches(d.Name) then return true end
+        end
+        return false
+    end
+    if obj:IsA("BasePart") then
+        local mdl = obj:FindFirstAncestorWhichIsA("Model")
+        if mdl then return isFreezePodModel(mdl) end
+    end
+    return false
+end
+
+local function enableFreezeESP()
+    if FreezeESPEnabled then return true end
+    FreezeESPEnabled = true
+    for _,d in ipairs(Workspace:GetDescendants()) do
+        if isFreezePodModel(d) then
+            if not freezeHighlights[d] then freezeHighlights[d] = createHighlight(d, Color3.fromRGB(255,100,100), Color3.fromRGB(200,40,40), 0.08, 0) end
+        end
+    end
+    freezeAddedConn = Workspace.DescendantAdded:Connect(function(obj)
+        if not FreezeESPEnabled then return end
+        if isFreezePodModel(obj) then
+            if not freezeHighlights[obj] then freezeHighlights[obj] = createHighlight(obj, Color3.fromRGB(255,100,100), Color3.fromRGB(200,40,40), 0.08, 0) end
+        end
+    end)
+    freezeRemovedConn = Workspace.DescendantRemoving:Connect(function(obj)
+        if freezeHighlights[obj] then safeDestroy(freezeHighlights[obj]); freezeHighlights[obj] = nil end
+        if obj:IsA("BasePart") then
+            local mdl = obj:FindFirstAncestorWhichIsA("Model")
+            if mdl and freezeHighlights[mdl] and not isFreezePodModel(mdl) then safeDestroy(freezeHighlights[mdl]); freezeHighlights[mdl] = nil end
+        end
+    end)
+    return true
+end
+
+local function disableFreezeESP()
+    if not FreezeESPEnabled then return false end
+    FreezeESPEnabled = false
+    if freezeAddedConn then pcall(function() freezeAddedConn:Disconnect() end); freezeAddedConn = nil end
+    if freezeRemovedConn then pcall(function() freezeRemovedConn:Disconnect() end); freezeRemovedConn = nil end
+    for k,_ in pairs(freezeHighlights) do safeDestroy(freezeHighlights[k]); freezeHighlights[k] = nil end
+    return false
+end
+
+-- Door ESP (improved detection)
+local DoorESPEnabled = false
+local doorHighlights = {}
+local doorAddedConn, doorRemovedConn
+
+local function isDoorModel(obj)
+    if not obj then return false end
+    local function nameMatches(n)
+        n = (n or ""):lower()
+        if n:find("exitdoor") or n:find("exit_door") then return true end
+        if n:find("door") then return true end
+        return false
+    end
+    if obj:IsA("Model") then
+        if nameMatches(obj.Name) then return true end
+        for _,d in ipairs(obj:GetDescendants()) do
+            if d:IsA("BasePart") and nameMatches(d.Name) then return true end
+        end
+        return false
+    end
+    if obj:IsA("BasePart") then
+        if nameMatches(obj.Name) then return true end
+        local mdl = obj:FindFirstAncestorWhichIsA("Model")
+        if mdl then return isDoorModel(mdl) end
+    end
+    return false
+end
+
+local function enableDoorESP()
+    if DoorESPEnabled then return true end
+    DoorESPEnabled = true
+    for _,d in ipairs(Workspace:GetDescendants()) do
+        if isDoorModel(d) then
+            if not doorHighlights[d] then doorHighlights[d] = createHighlight(d, Color3.fromRGB(255,230,120), Color3.fromRGB(120,90,20), 1.0, 0) end
+        end
+    end
+    doorAddedConn = Workspace.DescendantAdded:Connect(function(obj)
+        if not DoorESPEnabled then return end
+        if isDoorModel(obj) then
+            if not doorHighlights[obj] then doorHighlights[obj] = createHighlight(obj, Color3.fromRGB(255,230,120), Color3.fromRGB(120,90,20), 1.0, 0) end
+        end
+    end)
+    doorRemovedConn = Workspace.DescendantRemoving:Connect(function(obj)
+        if doorHighlights[obj] then safeDestroy(doorHighlights[obj]); doorHighlights[obj] = nil end
+        if obj:IsA("BasePart") then
+            local mdl = obj:FindFirstAncestorWhichIsA("Model")
+            if mdl and doorHighlights[mdl] and not isDoorModel(mdl) then safeDestroy(doorHighlights[mdl]); doorHighlights[mdl] = nil end
+        end
+    end)
+    return true
+end
+
+local function disableDoorESP()
+    if not DoorESPEnabled then return false end
+    DoorESPEnabled = false
+    if doorAddedConn then pcall(function() doorAddedConn:Disconnect() end); doorAddedConn = nil end
+    if doorRemovedConn then pcall(function() doorRemovedConn:Disconnect() end); doorRemovedConn = nil end
+    for k,_ in pairs(doorHighlights) do safeDestroy(doorHighlights[k]); doorHighlights[k] = nil end
+    return false
+end
+
+-- White Brick (texture)
 local WhiteBrickActive = false
 local whiteBackup = {}
 
@@ -356,6 +447,7 @@ local function disableWhiteBrick()
     return false
 end
 
+-- Snow texture
 local SnowActive = false
 local snowBackupParts = {}
 local snowPartConn = nil
@@ -456,6 +548,7 @@ local function disableSnow()
     return false
 end
 
+-- Remove Textures (keeps backups)
 local RemoveTexturesActive = false
 local rt_parts = {}
 local rt_meshparts = {}
@@ -604,7 +697,7 @@ local function disableRemoveTextures()
     return false
 end
 
--- Contador de Down (Ragdoll Countdown) - toggleable
+-- Ragdoll countdown (Contador de Down)
 local RagdollCountdownActive = false
 local ragdoll = {
     screenGui = nil,
@@ -875,7 +968,7 @@ local function disableRagdollCountdown()
     return false
 end
 
--- BeastPower Time (toggleable)
+-- BeastPower Time
 local BeastPowerActive = false
 local beast = {
     heartbeatConn = nil,
@@ -1012,7 +1105,7 @@ local function disableBeastPowerTime()
     return false
 end
 
--- Computer ProgressBar feature (toggleable)
+-- Computer ProgressBar feature
 local ComputerProgressActive = false
 local computerProgress = {
     heartbeatConns = {},
@@ -1197,7 +1290,7 @@ local function disableComputerProgress()
     return false
 end
 
--- UI (menu) and wiring (same menu as before, with toggles referencing the functions above)
+-- UI (menu)
 local LoadingPanel = Instance.new("Frame", ScreenGui)
 LoadingPanel.Name = "FTF_LoadingPanel"
 LoadingPanel.Size = UDim2.new(0,420,0,120)
@@ -1619,5 +1712,9 @@ _G.FTF.EnableBeastPowerTime = enableBeastPowerTime
 _G.FTF.DisableBeastPowerTime = disableBeastPowerTime
 _G.FTF.EnableComputerProgress = enableComputerProgress
 _G.FTF.DisableComputerProgress = disableComputerProgress
+_G.FTF.EnableFreezeESP = enableFreezeESP
+_G.FTF.DisableFreezeESP = disableFreezeESP
+_G.FTF.EnableDoorESP = enableDoorESP
+_G.FTF.DisableDoorESP = disableDoorESP
 
-print("[FTF_ESP] Script loaded — Computer Esp replaced old PC ESP; other features integrated.")
+print("[FTF_ESP] Script loaded — Computer Esp replaced old PC ESP; freeze pod & door detection improved.")
