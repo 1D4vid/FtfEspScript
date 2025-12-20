@@ -1,4 +1,17 @@
 -- FTF ESP — By David
+-- Complete LocalScript (client). Place in StarterPlayerScripts.
+-- Features:
+--  - Player ESP (highlights + name tags)
+--  - Computer ESP (state-aware highlights)
+--  - Freeze Pod ESP (optimized, incremental)
+--  - Door ESP (optimized, incremental)
+--  - White Brick & Snow texture toggles (with backups, incremental)
+--  - Remove Textures (performance mode) with backups
+--  - Ragdoll / Down countdown (28s) with per-head and global UI
+--  - BeastPower time labels
+--  - Computer ProgressBar (for ComputerTable models)
+--  - UI with toggles
+-- Designed to avoid frame stalls using incremental scanning.
 
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
@@ -23,20 +36,49 @@ local function safeDestroy(obj)
     end
 end
 
--- Batched iterator to avoid frame stalls for heavy loops
-local function batchIterate(list, batchSize, fn)
-    batchSize = batchSize or 200
-    local i = 1
-    while i <= #list do
-        local stop = math.min(i + batchSize - 1, #list)
-        for j = i, stop do
-            pcall(fn, list[j])
-        end
-        i = stop + 1
-        RunService.Heartbeat:Wait()
+----------------------------------------------------------------
+-- Incremental scanner utility (prevents frame stalls)
+----------------------------------------------------------------
+local scanners = {} -- id -> { conn }
+
+local function stopScanner(id)
+    if not id then return end
+    local s = scanners[id]
+    if s and s.conn then
+        pcall(function() s.conn:Disconnect() end)
+        scanners[id] = nil
     end
 end
 
+-- objects: array/table; processFunc(obj) called per item
+-- perFrame: how many items to process per Heartbeat
+local function startIncrementalScan(id, objects, processFunc, perFrame)
+    if not id or not objects or not processFunc then return end
+    stopScanner(id)
+    perFrame = tonumber(perFrame) or 40
+    local i = 1
+    local total = #objects
+    if total == 0 then return end
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        local c = 0
+        while c < perFrame and i <= total do
+            local ok = pcall(processFunc, objects[i])
+            -- ignore ok result; continue
+            i = i + 1
+            c = c + 1
+        end
+        if i > total then
+            pcall(function() conn:Disconnect() end)
+            scanners[id] = nil
+        end
+    end)
+    scanners[id] = { conn = conn }
+end
+
+----------------------------------------------------------------
+-- Basic setup: UI root
+----------------------------------------------------------------
 -- Remove previous GUI(s)
 for _,c in pairs(CoreGui:GetChildren()) do
     if c.Name == "FTF_ESP_GUI_DAVID" then pcall(function() c:Destroy() end) end
@@ -45,7 +87,6 @@ for _,c in pairs(PlayerGui:GetChildren()) do
     if c.Name == "FTF_ESP_GUI_DAVID" then pcall(function() c:Destroy() end) end
 end
 
--- Root ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FTF_ESP_GUI_DAVID"
 ScreenGui.ResetOnSpawn = false
@@ -53,7 +94,7 @@ ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent or ScreenGui.Parent ~= CoreGui then ScreenGui.Parent = PlayerGui end
 
--- Visual helper: highlight
+-- Highlight helper
 local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outlineTrans)
     if not adornee then return nil end
     local h = Instance.new("Highlight")
@@ -149,7 +190,7 @@ end)
 Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
 ----------------------------------------------------------------
--- COMPUTER ESP (state-aware)
+-- COMPUTER ESP (state-aware) - incremental scan
 ----------------------------------------------------------------
 local ComputerESPEnabled = false
 local computerInfo = {} -- model -> { highlight, conns }
@@ -157,7 +198,7 @@ local compAddedConn, compRemovedConn
 
 local function isComputerCandidate(model)
     if not model or not model:IsA("Model") then return false end
-    local lower = model.Name:lower()
+    local lower = (model.Name or ""):lower()
     return lower:find("computer") or lower:find("pc") or lower:find("terminal") or lower:find("console")
 end
 
@@ -194,13 +235,13 @@ local function stateColorsFor(s)
     if not s then return Color3.fromRGB(120,200,255), Color3.fromRGB(20,40,80) end
     s = tostring(s):lower()
     if s:find("ready") or s:find("avail") then
-        return Color3.fromRGB(80,150,255), Color3.fromRGB(20,40,80) -- blue
+        return Color3.fromRGB(80,150,255), Color3.fromRGB(20,40,80)
     elseif s:find("hacked") or s:find("done") or s:find("complete") or s == "1" then
-        return Color3.fromRGB(90,230,120), Color3.fromRGB(16,80,24) -- green
+        return Color3.fromRGB(90,230,120), Color3.fromRGB(16,80,24)
     elseif s:find("wrong") or s:find("failed") or s:find("error") or s == "-1" then
-        return Color3.fromRGB(255,80,80), Color3.fromRGB(120,24,24) -- red
+        return Color3.fromRGB(255,80,80), Color3.fromRGB(120,24,24)
     elseif s:find("progress") or s:find("hacking") then
-        return Color3.fromRGB(255,200,90), Color3.fromRGB(130,90,20) -- yellow
+        return Color3.fromRGB(255,200,90), Color3.fromRGB(130,90,20)
     else
         return Color3.fromRGB(120,200,255), Color3.fromRGB(20,40,80)
     end
@@ -217,7 +258,6 @@ local function updateComputerVisual(model)
     else
         info.highlight = createHighlight(model, fill, outline, 0.06, 0)
     end
-    -- prefer using screen color if present
     local screen = model:FindFirstChild("Screen")
     if screen and screen:IsA("BasePart") then
         info.highlight.FillColor = screen.Color
@@ -246,31 +286,40 @@ end
 local function enableComputerESP()
     if ComputerESPEnabled then return true end
     ComputerESPEnabled = true
-    for _,d in ipairs(Workspace:GetDescendants()) do
-        if d:IsA("Model") and isComputerCandidate(d) then
-            pcall(function() updateComputerVisual(d); wireComputerModel(d) end)
+
+    -- incremental scan of Workspace descendants to avoid stall
+    local objs = Workspace:GetDescendants()
+    startIncrementalScan("compesp", objs, function(obj)
+        if obj and obj:IsA("Model") and isComputerCandidate(obj) then
+            if not computerInfo[obj] then
+                pcall(function() updateComputerVisual(obj); wireComputerModel(obj) end)
+            end
         end
-    end
+    end, 80)
+
     compAddedConn = Workspace.DescendantAdded:Connect(function(obj)
         if not ComputerESPEnabled then return end
-        if obj:IsA("Model") and isComputerCandidate(obj) then
+        if obj and obj:IsA("Model") and isComputerCandidate(obj) then
             pcall(function() updateComputerVisual(obj); wireComputerModel(obj) end)
         end
     end)
+
     compRemovedConn = Workspace.DescendantRemoving:Connect(function(obj)
-        if obj:IsA("Model") and computerInfo[obj] then
+        if obj and obj:IsA("Model") and computerInfo[obj] then
             local info = computerInfo[obj]
             if info.highlight then safeDestroy(info.highlight) end
             if info.conns then for _,c in ipairs(info.conns) do pcall(function() c:Disconnect() end) end end
             computerInfo[obj] = nil
         end
     end)
+
     return true
 end
 
 local function disableComputerESP()
     if not ComputerESPEnabled then return false end
     ComputerESPEnabled = false
+    stopScanner("compesp")
     if compAddedConn then pcall(function() compAddedConn:Disconnect() end); compAddedConn = nil end
     if compRemovedConn then pcall(function() compRemovedConn:Disconnect() end); compRemovedConn = nil end
     for mdl,info in pairs(computerInfo) do
@@ -282,22 +331,19 @@ local function disableComputerESP()
 end
 
 ----------------------------------------------------------------
--- FREEZE POD & DOOR ESP (optimized to avoid stalls)
+-- FREEZE POD & DOOR ESP (model-based, incremental)
 ----------------------------------------------------------------
--- Freeze pod detection helpers (model-based, immediate children checked)
 local FreezeESPEnabled = false
 local freezeHighlights = {}
 local freezeAddedConn, freezeRemovedConn
 
 local function findFreezeModel(obj)
     if not obj then return nil end
-    local mdl = nil
-    if obj:IsA("Model") then mdl = obj else mdl = obj:FindFirstAncestorWhichIsA("Model") end
+    local mdl = obj:IsA("Model") and obj or obj:FindFirstAncestorWhichIsA("Model")
     if not mdl then return nil end
     local n = (mdl.Name or ""):lower()
     if n:find("freezepod") then return mdl end
     if n:find("freeze") and (n:find("pod") or n:find("capsule")) then return mdl end
-    -- check immediate children (cheap)
     for _,c in ipairs(mdl:GetChildren()) do
         if c:IsA("BasePart") then
             local cn = (c.Name or ""):lower()
@@ -312,14 +358,14 @@ end
 local function enableFreezeESP()
     if FreezeESPEnabled then return true end
     FreezeESPEnabled = true
-    local processed = {}
-    for _,obj in ipairs(Workspace:GetDescendants()) do
+    stopScanner("freezeesp")
+    local objs = Workspace:GetDescendants()
+    startIncrementalScan("freezeesp", objs, function(obj)
         local mdl = findFreezeModel(obj)
-        if mdl and not processed[mdl] then
-            processed[mdl] = true
+        if mdl and not freezeHighlights[mdl] then
             freezeHighlights[mdl] = createHighlight(mdl, Color3.fromRGB(255,100,100), Color3.fromRGB(200,40,40), 0.08, 0)
         end
-    end
+    end, 80)
     freezeAddedConn = Workspace.DescendantAdded:Connect(function(obj)
         if not FreezeESPEnabled then return end
         local mdl = findFreezeModel(obj)
@@ -342,21 +388,20 @@ end
 local function disableFreezeESP()
     if not FreezeESPEnabled then return false end
     FreezeESPEnabled = false
+    stopScanner("freezeesp")
     if freezeAddedConn then pcall(function() freezeAddedConn:Disconnect() end); freezeAddedConn = nil end
     if freezeRemovedConn then pcall(function() freezeRemovedConn:Disconnect() end); freezeRemovedConn = nil end
     for mdl,_ in pairs(freezeHighlights) do safeDestroy(freezeHighlights[mdl]); freezeHighlights[mdl] = nil end
     return false
 end
 
--- Door detection helpers (model-based, immediate children checked)
 local DoorESPEnabled = false
 local doorHighlights = {}
 local doorAddedConn, doorRemovedConn
 
 local function findDoorModel(obj)
     if not obj then return nil end
-    local mdl = nil
-    if obj:IsA("Model") then mdl = obj else mdl = obj:FindFirstAncestorWhichIsA("Model") end
+    local mdl = obj:IsA("Model") and obj or obj:FindFirstAncestorWhichIsA("Model")
     if not mdl then return nil end
     local function nameMatches(n)
         n = (n or ""):lower()
@@ -374,14 +419,14 @@ end
 local function enableDoorESP()
     if DoorESPEnabled then return true end
     DoorESPEnabled = true
-    local processed = {}
-    for _,obj in ipairs(Workspace:GetDescendants()) do
+    stopScanner("dooresp")
+    local objs = Workspace:GetDescendants()
+    startIncrementalScan("dooresp", objs, function(obj)
         local mdl = findDoorModel(obj)
-        if mdl and not processed[mdl] then
-            processed[mdl] = true
+        if mdl and not doorHighlights[mdl] then
             doorHighlights[mdl] = createHighlight(mdl, Color3.fromRGB(255,230,120), Color3.fromRGB(120,90,20), 1.0, 0)
         end
-    end
+    end, 80)
     doorAddedConn = Workspace.DescendantAdded:Connect(function(obj)
         if not DoorESPEnabled then return end
         local mdl = findDoorModel(obj)
@@ -404,6 +449,7 @@ end
 local function disableDoorESP()
     if not DoorESPEnabled then return false end
     DoorESPEnabled = false
+    stopScanner("dooresp")
     if doorAddedConn then pcall(function() doorAddedConn:Disconnect() end); doorAddedConn = nil end
     if doorRemovedConn then pcall(function() doorRemovedConn:Disconnect() end); doorRemovedConn = nil end
     for mdl,_ in pairs(doorHighlights) do safeDestroy(doorHighlights[mdl]); doorHighlights[mdl] = nil end
@@ -411,9 +457,9 @@ local function disableDoorESP()
 end
 
 ----------------------------------------------------------------
--- White Brick & Snow (texture features)
+-- White Brick & Snow (use incremental scanner)
 ----------------------------------------------------------------
--- White Brick (change non-player BaseParts to white bricks, backup & restore)
+-- White Brick
 local WhiteBrickActive = false
 local whiteBackup = {} -- part -> {Color, Material}
 
@@ -436,16 +482,16 @@ end
 
 local function applyWhiteToAll()
     local desc = Workspace:GetDescendants()
-    batchIterate(desc, 200, function(d)
+    startIncrementalScan("whitebrick", desc, function(d)
         if d and d:IsA("BasePart") then saveAndApplyWhite(d) end
-    end)
+    end, 120)
 end
 
 local whiteDescConn = nil
 local function enableWhiteBrick()
     if WhiteBrickActive then return true end
     WhiteBrickActive = true
-    task.spawn(applyWhiteToAll)
+    applyWhiteToAll()
     whiteDescConn = Workspace.DescendantAdded:Connect(function(d)
         if not WhiteBrickActive then return end
         if d and d:IsA("BasePart") then task.defer(function() saveAndApplyWhite(d) end) end
@@ -456,6 +502,7 @@ end
 local function disableWhiteBrick()
     if not WhiteBrickActive then return false end
     WhiteBrickActive = false
+    stopScanner("whitebrick")
     if whiteDescConn then pcall(function() whiteDescConn:Disconnect() end); whiteDescConn = nil end
     for part, props in pairs(whiteBackup) do
         if part and part.Parent then
@@ -469,7 +516,7 @@ local function disableWhiteBrick()
     return false
 end
 
--- Snow texture (whiten + lighting backup)
+-- Snow texture
 local SnowActive = false
 local snowBackupParts = {}
 local snowPartConn = nil
@@ -513,7 +560,7 @@ local function enableSnow()
         end
     end
     local desc = Workspace:GetDescendants()
-    batchIterate(desc, 200, function(obj)
+    startIncrementalScan("snow", desc, function(obj)
         if obj and obj:IsA("BasePart") then
             if not snowBackupParts[obj] then
                 local okC, col = pcall(function() return obj.Color end)
@@ -522,7 +569,7 @@ local function enableSnow()
             end
             pcall(function() obj.Color = Color3.new(1,1,1); obj.Material = Enum.Material.SmoothPlastic end)
         end
-    end)
+    end, 120)
     pcall(function()
         Lighting.Ambient = Color3.new(1,1,1)
         Lighting.OutdoorAmbient = Color3.new(1,1,1)
@@ -553,6 +600,7 @@ end
 local function disableSnow()
     if not SnowActive then return false end
     SnowActive = false
+    stopScanner("snow")
     if snowPartConn then pcall(function() snowPartConn:Disconnect() end); snowPartConn = nil end
     for part, props in pairs(snowBackupParts) do
         if part and part.Parent then
@@ -659,8 +707,10 @@ local function enableRemoveTextures()
     pcall(function() Lighting.GlobalShadows = false; Lighting.FogEnd = 9e9; Lighting.Brightness = 0 end)
     pcall(function() settings().Rendering.QualityLevel = "Level01" end)
 
+    -- batch via incremental scan for very large worlds (but we can run with moderate perFrame)
     local desc = Workspace:GetDescendants()
-    batchIterate(desc, REMOVE_TEXTURES_BATCH, function(v) applyInstanceForRemove(v) end)
+    startIncrementalScan("removetex", desc, function(v) applyInstanceForRemove(v) end, math.max(60, REMOVE_TEXTURES_BATCH))
+
     for _,e in ipairs(Lighting:GetChildren()) do applyLightingChildForRemove(e) end
 
     rt_conn = Workspace.DescendantAdded:Connect(function(v)
@@ -674,6 +724,7 @@ end
 
 local function disableRemoveTextures()
     if not RemoveTexturesActive then return false end
+    stopScanner("removetex")
     if rt_conn then pcall(function() rt_conn:Disconnect() end); rt_conn = nil end
 
     for p, props in pairs(rt_parts) do if p and p.Parent then pcall(function() if props.Material then p.Material = props.Material end; if props.Reflectance then p.Reflectance = props.Reflectance end end) end end
@@ -995,7 +1046,7 @@ local function disableRagdollCountdown()
 end
 
 ----------------------------------------------------------------
--- BEASTPOWER TIME (labels)
+-- BEASTPOWER TIME
 ----------------------------------------------------------------
 local BeastPowerActive = false
 local beast = {
@@ -1134,11 +1185,11 @@ local function disableBeastPowerTime()
 end
 
 ----------------------------------------------------------------
--- COMPUTER PROGRESS BAR
+-- COMPUTER PROGRESS BAR (unchanged logic)
 ----------------------------------------------------------------
 local ComputerProgressActive = false
 local computerProgress = {
-    heartbeatConns = {}, -- model -> conn
+    heartbeatConns = {},
     playerAddedConn = nil,
     active = false
 }
@@ -1321,7 +1372,7 @@ local function disableComputerProgress()
 end
 
 ----------------------------------------------------------------
--- UI (menu) with toggles
+-- UI (menu) with toggles (fully included)
 ----------------------------------------------------------------
 local LoadingPanel = Instance.new("Frame", ScreenGui)
 LoadingPanel.Name = "FTF_LoadingPanel"
@@ -1686,7 +1737,6 @@ Tabs.Timers.MouseButton1Click:Connect(function() currentTab = "Timers"; Tabs.Tim
 Tabs.Teleport.MouseButton1Click:Connect(function() currentTab = "Teleport"; Tabs.Teleport.BackgroundColor3 = Color3.fromRGB(34,34,34); Tabs.ESP.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Textures.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Timers.BackgroundColor3 = Color3.fromRGB(28,28,28); buildTeleportTab() end)
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function() if currentTab == "ESP" then buildESPTab() elseif currentTab == "Textures" then buildTexturesTab() elseif currentTab == "Timers" then buildTimersTab() else buildTeleportTab() end end)
 
--- Dragging main frame
 do
     local dragging, dragStart, startPos = false, nil, nil
     MainFrame.InputBegan:Connect(function(input)
@@ -1703,7 +1753,6 @@ do
     end)
 end
 
--- Minimize/restore/mobile/k bindings
 MinimizeBtn.MouseButton1Click:Connect(function() pcall(updateMinimizedAvatar); MainFrame.Visible = false; MinimizedIcon.Visible = true end)
 MinimizedIcon.MouseButton1Click:Connect(function() MainFrame.Visible = true; MinimizedIcon.Visible = false end)
 CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
@@ -1718,13 +1767,13 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Finish loading
+-- Finish loading UI and default tab
 task.spawn(function()
-    task.wait(1.1)
+    task.wait(1)
     safeDestroy(LoadingPanel)
     Toast.Visible = true
     pcall(function() TweenService:Create(Toast, TweenInfo.new(0.28), {Position = UDim2.new(0.5, -180, 0.02, 0)}):Play() end)
-    task.delay(7.5, function()
+    task.delay(6, function()
         if Toast and Toast.Parent then pcall(function() TweenService:Create(Toast, TweenInfo.new(0.22), {Position = UDim2.new(0.5, -180, -0.08, 0)}):Play() end); task.delay(0.26, function() if Toast and Toast.Parent then Toast.Visible = false end end) end
     end)
     Tabs.ESP.BackgroundColor3 = Color3.fromRGB(34,34,34)
@@ -1753,5 +1802,7 @@ _G.FTF.EnableFreezeESP = enableFreezeESP
 _G.FTF.DisableFreezeESP = disableFreezeESP
 _G.FTF.EnableDoorESP = enableDoorESP
 _G.FTF.DisableDoorESP = disableDoorESP
+_G.FTF.EnableRemoveTextures = enableRemoveTextures
+_G.FTF.DisableRemoveTextures = disableRemoveTextures
 
-print("[FTF_ESP] Script loaded — reviewed and optimized (freeze pod & door ESP fixed).")
+print("[FTF_ESP] Script loaded — incremental scanning active; toggles should not freeze the game.")
