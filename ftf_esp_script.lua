@@ -1,5 +1,6 @@
 -- FTF ESP — By David
 -- Integrated Contador de Down, BeastPower Time and Computer ProgressBar (toggleable)
+-- Updated: Computer ESP replaced with the method you provided (fixed), menu/draggable/UI kept as requested.
 
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
@@ -36,6 +37,7 @@ local function batchIterate(list, batchSize, fn)
     end
 end
 
+-- Cleanup previous UI instances
 for _,c in pairs(CoreGui:GetChildren()) do
     if c.Name == "FTF_ESP_GUI_DAVID" then pcall(function() c:Destroy() end) end
 end
@@ -50,6 +52,7 @@ ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent or ScreenGui.Parent ~= CoreGui then ScreenGui.Parent = PlayerGui end
 
+-- Generic highlight creator (used by several features)
 local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outlineTrans)
     if not adornee then return nil end
     local h = Instance.new("Highlight")
@@ -63,6 +66,9 @@ local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outl
     return h
 end
 
+-- ======================
+-- Player ESP
+-- ======================
 local PlayerESPEnabled = false
 local playerHighlights = {}
 local playerNameTags = {}
@@ -140,12 +146,12 @@ Players.PlayerAdded:Connect(function(p)
 end)
 Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
--- ===== Computer Esp (substituted implementation as requested) =====
-pcall(function() script.Name = "Computer Esp" end)
-
+-- ======================
+-- Computer ESP (USER METHOD: replaced to fix bug)
+-- This matches the method you supplied (computer_monitor.lua) — wired per-model, connects Changed events, updates highlight color from Screen part.
+-- ======================
 local ComputerESPEnabled = false
 local computerInfo = {}
-local compAddedConn, compRemovedConn
 
 local function isComputerCandidate(model)
     if not model or not model:IsA("Model") then return false end
@@ -205,7 +211,7 @@ local function createHighlightForComputer(model, fillColor, outlineColor, transp
     highlight.OutlineColor = outlineColor
     highlight.FillTransparency = transparency or 0.06
     highlight.OutlineTransparency = outlineTransparency or 0
-    highlight.Parent = Workspace
+    highlight.Parent = workspace
     return highlight
 end
 
@@ -265,34 +271,30 @@ local function wireComputerModel(model)
 end
 
 local function scanAndWireExistingComputers()
-    for _, d in ipairs(Workspace:GetDescendants()) do
+    for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("Model") and isComputerCandidate(d) then
-            pcall(function()
-                updateComputerVisual(d)
-                wireComputerModel(d)
-            end)
+            updateComputerVisual(d)
+            wireComputerModel(d)
         end
     end
 end
 
+local compAddConn, compRemoveConn
 local function enableComputerESP()
     if ComputerESPEnabled then return true end
     ComputerESPEnabled = true
 
-    -- initial scan
+    -- initial pass
     scanAndWireExistingComputers()
 
-    compAddedConn = Workspace.DescendantAdded:Connect(function(obj)
-        if not ComputerESPEnabled then return end
+    compAddConn = workspace.DescendantAdded:Connect(function(obj)
         if obj:IsA("Model") and isComputerCandidate(obj) then
-            pcall(function() updateComputerVisual(obj); wireComputerModel(obj) end)
-        elseif obj:IsA("BasePart") then
-            local mdl = obj:FindFirstAncestorWhichIsA("Model")
-            if mdl and isComputerCandidate(mdl) then pcall(function() updateComputerVisual(mdl); wireComputerModel(mdl) end) end
+            updateComputerVisual(obj)
+            wireComputerModel(obj)
         end
     end)
 
-    compRemovedConn = Workspace.DescendantRemoving:Connect(function(obj)
+    compRemoveConn = workspace.DescendantRemoving:Connect(function(obj)
         if obj:IsA("Model") and computerInfo[obj] then
             local info = computerInfo[obj]
             if info.highlight then safeDestroy(info.highlight) end
@@ -312,23 +314,25 @@ local function disableComputerESP()
     if not ComputerESPEnabled then return false end
     ComputerESPEnabled = false
 
-    if compAddedConn then pcall(function() compAddedConn:Disconnect() end); compAddedConn = nil end
-    if compRemovedConn then pcall(function() compRemovedConn:Disconnect() end); compRemovedConn = nil end
+    if compAddConn then pcall(function() compAddConn:Disconnect() end); compAddConn = nil end
+    if compRemoveConn then pcall(function() compRemoveConn:Disconnect() end); compRemoveConn = nil end
 
     for mdl, info in pairs(computerInfo) do
         if info.highlight then safeDestroy(info.highlight) end
-        if info.conns then
-            for _, c in ipairs(info.conns) do
-                pcall(function() c:Disconnect() end)
-            end
+        if info.conns then 
+            for _, c in ipairs(info.conns) do 
+                pcall(function() c:Disconnect() end) 
+            end 
         end
         computerInfo[mdl] = nil
     end
 
     return false
 end
--- ===== end Computer Esp =====
 
+-- ======================
+-- Freeze Pod ESP
+-- ======================
 local FreezeESPEnabled = false
 local freezeHighlights = {}
 local freezeAddedConn, freezeRemovedConn
@@ -364,6 +368,9 @@ local function disableFreezeESP()
     return false
 end
 
+-- ======================
+-- Door ESP
+-- ======================
 local DoorESPEnabled = false
 local doorHighlights = {}
 local doorAddedConn, doorRemovedConn
@@ -402,6 +409,9 @@ local function disableDoorESP()
     return false
 end
 
+-- ======================
+-- White Brick (textures)
+-- ======================
 local WhiteBrickActive = false
 local whiteBackup = {}
 
@@ -457,6 +467,9 @@ local function disableWhiteBrick()
     return false
 end
 
+-- ======================
+-- Snow Mode
+-- ======================
 local SnowActive = false
 local snowBackupParts = {}
 local snowPartConn = nil
@@ -557,6 +570,9 @@ local function disableSnow()
     return false
 end
 
+-- ======================
+-- Remove Textures (performance)
+-- ======================
 local RemoveTexturesActive = false
 local rt_parts = {}
 local rt_meshparts = {}
@@ -705,6 +721,9 @@ local function disableRemoveTextures()
     return false
 end
 
+-- ======================
+-- Ragdoll Countdown
+-- ======================
 local RagdollCountdownActive = false
 local ragdoll_whitelist_strings = {
     {49,51,57,52,57,56,53,52,52,48},
@@ -982,6 +1001,9 @@ local function disableRagdollCountdown()
     return false
 end
 
+-- ======================
+-- Beast Power Time
+-- ======================
 local BeastPowerActive = false
 local beast = {
     heartbeatConn = nil,
@@ -1118,7 +1140,9 @@ local function disableBeastPowerTime()
     return false
 end
 
--- Computer ProgressBar feature (toggleable)
+-- ======================
+-- Computer ProgressBar
+-- ======================
 local ComputerProgressActive = false
 local computerProgress = {
     heartbeatConns = {}, -- model -> conn
@@ -1240,7 +1264,6 @@ local function teardownComputerProgress(tableModel)
 end
 
 local function reloadComputersTask()
-    -- immediate first run then loop
     local function scanMap()
         local ok, currentMap = pcall(function() return ReplicatedStorage:FindFirstChild("CurrentMap") end)
         if not ok or not currentMap then return end
@@ -1269,15 +1292,9 @@ local function enableComputerProgress()
     ComputerProgressActive = true
     computerProgress.active = true
 
-    -- scan existing map immediately
     spawn(reloadComputersTask)
 
-    -- also attach PlayerAdded handler to create labels for new players (not strictly necessary here)
-    computerProgress.playerAddedConn = Players.PlayerAdded:Connect(function(pl)
-        -- create progress bars for any existing computers touching new player will be handled by heartbeat
-        -- no op
-    end)
-
+    computerProgress.playerAddedConn = Players.PlayerAdded:Connect(function(pl) end)
     return true
 end
 
@@ -1296,7 +1313,6 @@ local function disableComputerProgress()
     end
     computerProgress.heartbeatConns = {}
 
-    -- teardown any remaining progress GUIs in workspace (only for ComputerTable models found)
     local ok, currentMap = pcall(function() return ReplicatedStorage:FindFirstChild("CurrentMap") end)
     if ok and currentMap then
         local mapName = currentMap.Value
@@ -1314,6 +1330,11 @@ local function disableComputerProgress()
 
     return false
 end
+
+-- ======================
+-- UI: vertical-left model; close is "X"; menu draggable
+-- (the UI layout has been kept as requested; the Computer ESP now uses the user-provided method)
+-- ======================
 
 local LoadingPanel = Instance.new("Frame", ScreenGui)
 LoadingPanel.Name = "FTF_LoadingPanel"
@@ -1390,7 +1411,8 @@ MobileToggle.TextColor3 = Color3.fromRGB(220,220,220)
 MobileToggle.Visible = UserInputService.TouchEnabled and true or false
 local mtCorner = Instance.new("UICorner", MobileToggle); mtCorner.CornerRadius = UDim.new(0,12)
 
-local MENU_W, MENU_H = 520, 380
+-- Menu dimensions
+local MENU_W, MENU_H = 720, 420
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "FTF_Main"
 MainFrame.Size = UDim2.new(0, MENU_W, 0, MENU_H)
@@ -1400,60 +1422,124 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Visible = false
 local mfCorner = Instance.new("UICorner", MainFrame); mfCorner.CornerRadius = UDim.new(0,12)
 
+-- TitleBar (draggable)
 local TitleBar = Instance.new("Frame", MainFrame)
-TitleBar.Size = UDim2.new(1,0,0,48)
-TitleBar.BackgroundTransparency = 1
+TitleBar.Size = UDim2.new(1,0,0,40)
+TitleBar.Position = UDim2.new(0,0,0,0)
+TitleBar.BackgroundTransparency = 0.95
+
 local TitleLbl = Instance.new("TextLabel", TitleBar)
 TitleLbl.Text = "FTF - David's ESP"
-TitleLbl.Font = Enum.Font.GothamBold
-TitleLbl.TextSize = 16
+TitleLbl.Font = Enum.Font.GothamSemibold
+TitleLbl.TextSize = 14
 TitleLbl.TextColor3 = Color3.fromRGB(220,220,220)
 TitleLbl.BackgroundTransparency = 1
-TitleLbl.Position = UDim2.new(0,12,0,12)
-TitleLbl.Size = UDim2.new(0,260,0,24)
-local SearchBox = Instance.new("TextBox", TitleBar)
-SearchBox.Size = UDim2.new(0,220,0,28)
-SearchBox.Position = UDim2.new(1,-240,0,10)
-SearchBox.BackgroundColor3 = Color3.fromRGB(26,26,26)
-SearchBox.TextColor3 = Color3.fromRGB(200,200,200)
-SearchBox.ClearTextOnFocus = true
-local sbCorner = Instance.new("UICorner", SearchBox); sbCorner.CornerRadius = UDim.new(0,8)
-local MinimizeBtn = Instance.new("TextButton", TitleBar)
-MinimizeBtn.Text = "—"; MinimizeBtn.Font = Enum.Font.GothamBold; MinimizeBtn.TextSize = 20
-MinimizeBtn.BackgroundTransparency = 1; MinimizeBtn.Size = UDim2.new(0,36,0,36); MinimizeBtn.Position = UDim2.new(1,-92,0,6); MinimizeBtn.TextColor3 = Color3.fromRGB(200,200,200)
-local CloseBtn = Instance.new("TextButton", TitleBar)
-CloseBtn.Text = "✕"; CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 18
-CloseBtn.BackgroundTransparency = 1; CloseBtn.Size = UDim2.new(0,36,0,36); CloseBtn.Position = UDim2.new(1,-44,0,6); CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
+TitleLbl.Position = UDim2.new(0,12,0,8)
+TitleLbl.Size = UDim2.new(0,300,0,24)
 
-local TabsParent = Instance.new("Frame", MainFrame)
-TabsParent.Size = UDim2.new(1,-24,0,44)
-TabsParent.Position = UDim2.new(0,12,0,56)
-TabsParent.BackgroundTransparency = 1
+-- Window control placeholders (Minimize and Close 'X')
+local WinControls = Instance.new("Frame", TitleBar)
+WinControls.Size = UDim2.new(0,90,0,24)
+WinControls.Position = UDim2.new(1,-100,0,8)
+WinControls.BackgroundTransparency = 1
+
+local MinimizeBtn = Instance.new("TextButton", WinControls)
+MinimizeBtn.Text = "—"
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.TextSize = 18
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Size = UDim2.new(0,36,0,24)
+MinimizeBtn.Position = UDim2.new(0,0,0,0)
+MinimizeBtn.TextColor3 = Color3.fromRGB(200,200,200)
+
+local CloseBtn = Instance.new("TextButton", WinControls)
+CloseBtn.Text = "✕"
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 16
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Size = UDim2.new(0,36,0,24)
+CloseBtn.Position = UDim2.new(0,54,0,0)
+CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
+
+-- Sidebar (original categories)
+local Sidebar = Instance.new("Frame", MainFrame)
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0,200,1, -40)
+Sidebar.Position = UDim2.new(0,0,0,40)
+Sidebar.BackgroundTransparency = 1
+
+local sideLayout = Instance.new("UIListLayout", Sidebar)
+sideLayout.Padding = UDim.new(0,14)
+sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sideLayout.Padding = UDim.new(0,12)
+
 local tabNames = {"ESP","Textures","Timers","Teleport"}
-local tabPadding = 10
-local tabCount = #tabNames
-local tabAvailableWidth = MENU_W - 24
-local tabWidth = math.max(80, math.floor((tabAvailableWidth - (tabPadding * (tabCount - 1))) / tabCount))
+
 local Tabs = {}
-for i,name in ipairs(tabNames) do
-    local x = (i-1) * (tabWidth + tabPadding)
-    local t = Instance.new("TextButton", TabsParent)
-    t.Size = UDim2.new(0, tabWidth, 0, 34)
-    t.Position = UDim2.new(0, x, 0, 4)
-    t.Text = name
-    t.Font = Enum.Font.GothamSemibold
-    t.TextSize = 14
-    t.TextColor3 = Color3.fromRGB(200,200,200)
-    t.BackgroundColor3 = Color3.fromRGB(28,28,28)
-    t.AutoButtonColor = false
-    local c = Instance.new("UICorner", t); c.CornerRadius = UDim.new(0,12)
-    Tabs[name] = t
+local function createSidebarButton(parent, text)
+    local btn = Instance.new("TextButton", parent)
+    btn.AutoButtonColor = false
+    btn.Size = UDim2.new(1, -20, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(28,28,28)
+    btn.BorderSizePixel = 0
+    local bCorner = Instance.new("UICorner", btn); bCorner.CornerRadius = UDim.new(0,8)
+
+    local iconFrame = Instance.new("Frame", btn)
+    iconFrame.Size = UDim2.new(0,32,0,32)
+    iconFrame.Position = UDim2.new(0,8,0.5,-16)
+    iconFrame.BackgroundColor3 = Color3.fromRGB(24,24,26)
+    local icCorner = Instance.new("UICorner", iconFrame); icCorner.CornerRadius = UDim.new(1,0)
+    local iconLabel = Instance.new("TextLabel", iconFrame)
+    iconLabel.Size = UDim2.new(1,0,1,0)
+    iconLabel.BackgroundTransparency = 1
+    iconLabel.Font = Enum.Font.GothamSemibold
+    iconLabel.TextSize = 18
+    iconLabel.TextColor3 = Color3.fromRGB(200,200,200)
+    iconLabel.Text = "◉"
+
+    local lbl = Instance.new("TextLabel", btn)
+    lbl.Size = UDim2.new(1, -60, 1, 0)
+    lbl.Position = UDim2.new(0,52,0,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(220,220,220)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = text
+
+    return btn, iconFrame, lbl
 end
 
-local ContentScroll = Instance.new("ScrollingFrame", MainFrame)
+for i,name in ipairs(tabNames) do
+    local b, icon, lbl = createSidebarButton(Sidebar, name)
+    Tabs[name] = b
+end
+
+-- Content area
+local ContentArea = Instance.new("Frame", MainFrame)
+ContentArea.Name = "ContentArea"
+ContentArea.Size = UDim2.new(1, -200, 1, -40)
+ContentArea.Position = UDim2.new(0,200,0,40)
+ContentArea.BackgroundColor3 = Color3.fromRGB(12,12,12)
+ContentArea.BorderSizePixel = 0
+local contentCorner = Instance.new("UICorner", ContentArea); contentCorner.CornerRadius = UDim.new(0,6)
+
+local LargeTitle = Instance.new("TextLabel", ContentArea)
+LargeTitle.Name = "LargeTitle"
+LargeTitle.Size = UDim2.new(1, 0, 0, 80)
+LargeTitle.Position = UDim2.new(0, 24, 0, 12)
+LargeTitle.BackgroundTransparency = 1
+LargeTitle.Font = Enum.Font.FredokaOne
+LargeTitle.TextSize = 36
+LargeTitle.TextColor3 = Color3.fromRGB(240,240,240)
+LargeTitle.Text = "Tab"
+LargeTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local ContentScroll = Instance.new("ScrollingFrame", ContentArea)
 ContentScroll.Name = "ContentScroll"
-ContentScroll.Size = UDim2.new(1,-24,1,-120)
-ContentScroll.Position = UDim2.new(0,12,0,112)
+ContentScroll.Size = UDim2.new(1, -48, 1, -120)
+ContentScroll.Position = UDim2.new(0,24,0,104)
 ContentScroll.BackgroundTransparency = 1
 ContentScroll.BorderSizePixel = 0
 ContentScroll.ScrollBarImageColor3 = Color3.fromRGB(75,75,75)
@@ -1461,11 +1547,12 @@ ContentScroll.ScrollBarThickness = 8
 local contentLayout = Instance.new("UIListLayout", ContentScroll)
 contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 contentLayout.Padding = UDim.new(0,10)
-contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScroll.CanvasSize = UDim2.new(0,0,0, contentLayout.AbsoluteContentSize.Y + 18)
 end)
 
+-- Builders (from original script)
 local function createToggle(parent, labelText, initial, onToggle)
     local frame = Instance.new("Frame", parent)
     frame.Size = UDim2.new(0.95,0,0,44); frame.BackgroundColor3 = Color3.fromRGB(28,28,28)
@@ -1525,7 +1612,6 @@ local function createButton(parent, labelText, btnText, callback)
     return frame, lbl, btn
 end
 
-local currentTab = "ESP"
 local function clearContent()
     for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") then safeDestroy(v) end end
 end
@@ -1580,7 +1666,7 @@ local function buildESPTab()
     end)
     a1.LayoutOrder = order; order = order + 1
 
-    local a2, _ = createToggle(ContentScroll, "Computer ESP", ComputerESPEnabled, function()
+    local a2, _ = createToggle(ContentScroll, "ESP PCs (state colors)", ComputerESPEnabled, function()
         if ComputerESPEnabled then
             disableComputerESP()
             return false
@@ -1671,21 +1757,64 @@ local function buildTeleportTab()
     end
 end
 
-Tabs.ESP.MouseButton1Click:Connect(function() currentTab = "ESP"; Tabs.ESP.BackgroundColor3 = Color3.fromRGB(34,34,34); Tabs.Textures.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Timers.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Teleport.BackgroundColor3 = Color3.fromRGB(28,28,28); buildESPTab() end)
-Tabs.Textures.MouseButton1Click:Connect(function() currentTab = "Textures"; Tabs.Textures.BackgroundColor3 = Color3.fromRGB(34,34,34); Tabs.ESP.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Timers.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Teleport.BackgroundColor3 = Color3.fromRGB(28,28,28); buildTexturesTab() end)
-Tabs.Timers.MouseButton1Click:Connect(function() currentTab = "Timers"; Tabs.Timers.BackgroundColor3 = Color3.fromRGB(34,34,34); Tabs.ESP.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Textures.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Teleport.BackgroundColor3 = Color3.fromRGB(28,28,28); buildTimersTab() end)
-Tabs.Teleport.MouseButton1Click:Connect(function() currentTab = "Teleport"; Tabs.Teleport.BackgroundColor3 = Color3.fromRGB(34,34,34); Tabs.ESP.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Textures.BackgroundColor3 = Color3.fromRGB(28,28,28); Tabs.Timers.BackgroundColor3 = Color3.fromRGB(28,28,28); buildTeleportTab() end)
-SearchBox:GetPropertyChangedSignal("Text"):Connect(function() if currentTab == "ESP" then buildESPTab() elseif currentTab == "Textures" then buildTexturesTab() elseif currentTab == "Timers" then buildTimersTab() else buildTeleportTab() end end)
+-- Tab behaviour
+local currentTab = tabNames[1]
 
+local function setActiveTab(name)
+    currentTab = name or tabNames[1]
+
+    for tName, btn in pairs(Tabs) do
+        if tName == currentTab then
+            btn.BackgroundColor3 = Color3.fromRGB(34,34,34)
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(28,28,28)
+        end
+    end
+
+    LargeTitle.Text = currentTab
+
+    if currentTab == "ESP" then
+        pcall(buildESPTab)
+    elseif currentTab == "Textures" then
+        pcall(buildTexturesTab)
+    elseif currentTab == "Timers" then
+        pcall(buildTimersTab)
+    elseif currentTab == "Teleport" then
+        pcall(buildTeleportTab)
+    else
+        clearContent()
+    end
+end
+
+for name, btn in pairs(Tabs) do
+    btn.MouseButton1Click:Connect(function()
+        setActiveTab(name)
+    end)
+end
+
+-- Initialize selection
+setActiveTab(currentTab)
+
+-- Draggable TitleBar
 do
-    local dragging, dragStart, startPos = false, nil, nil
-    MainFrame.InputBegan:Connect(function(input)
+    local dragging = false
+    local dragStart = Vector2.new(0,0)
+    local startPos = MainFrame.Position
+
+    TitleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
         end
     end)
-    MainFrame.InputChanged:Connect(function(input)
+
+    TitleBar.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
             MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
@@ -1693,10 +1822,25 @@ do
     end)
 end
 
-MinimizeBtn.MouseButton1Click:Connect(function() pcall(updateMinimizedAvatar); MainFrame.Visible = false; MinimizedIcon.Visible = true end)
-MinimizedIcon.MouseButton1Click:Connect(function() MainFrame.Visible = true; MinimizedIcon.Visible = false end)
-CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
-MobileToggle.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible; if MainFrame.Visible then MinimizedIcon.Visible = false end end)
+-- Close/minimize controls
+MinimizeBtn.MouseButton1Click:Connect(function()
+    pcall(updateMinimizedAvatar)
+    MainFrame.Visible = false
+    MinimizedIcon.Visible = true
+end)
+MinimizedIcon.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    MinimizedIcon.Visible = false
+end)
+CloseBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+end)
+MobileToggle.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+    if MainFrame.Visible then MinimizedIcon.Visible = false end
+end)
+
+-- Keyboard toggle (K)
 local menuOpen = false
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
@@ -1707,6 +1851,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
+-- Finalize startup
 task.spawn(function()
     task.wait(1.1)
     safeDestroy(LoadingPanel)
@@ -1715,12 +1860,12 @@ task.spawn(function()
     task.delay(7.5, function()
         if Toast and Toast.Parent then pcall(function() TweenService:Create(Toast, TweenInfo.new(0.22), {Position = UDim2.new(0.5, -180, -0.08, 0)}):Play() end); task.delay(0.26, function() if Toast and Toast.Parent then Toast.Visible = false end end) end
     end)
-    Tabs.ESP.BackgroundColor3 = Color3.fromRGB(34,34,34)
-    buildESPTab()
+    setActiveTab(currentTab)
     MainFrame.Visible = true
     menuOpen = true
 end)
 
+-- Expose toggles and utilities globally (same as original)
 _G.FTF = _G.FTF or {}
 _G.FTF.EnablePlayerESP = enablePlayerESP
 _G.FTF.DisablePlayerESP = disablePlayerESP
@@ -1737,4 +1882,4 @@ _G.FTF.DisableBeastPowerTime = disableBeastPowerTime
 _G.FTF.EnableComputerProgress = enableComputerProgress
 _G.FTF.DisableComputerProgress = disableComputerProgress
 
-print("[FTF_ESP] Script loaded — Contador de Down, BeastPower Time and Computer ProgressBar integrated.")
+print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained.")
