@@ -2,7 +2,7 @@
 -- Integrated Contador de Down, BeastPower Time and Computer ProgressBar (toggleable)
 -- Updated: Computer ESP replaced with the method you provided (fixed), menu/draggable/UI kept as requested.
 -- WalkSpeed quick input added into Others category (single input field).
--- Added: "HitBox extender" option in "Others" tab (integrates the provided head-size script as a toggleable feature).
+-- Added: "HitBox extender" and "Esticar Tela" options in "Others" tab.
 
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
@@ -1371,7 +1371,7 @@ end
 -- UI: vertical-left model; close is "X"; menu/draggable
 -- (the UI layout has been kept as requested; the Computer ESP now uses the user-provided method)
 -- WalkSpeed Quick Input added into Others tab (single input)
--- Added HitBox extender integration below.
+-- Added HitBox extender and Esticar Tela integrations below.
 -- ======================
 
 local LoadingPanel = Instance.new("Frame", ScreenGui)
@@ -1656,7 +1656,7 @@ local function clearContent()
 end
 
 -- ======================
--- WalkSpeed GUI (kept as optional panel but Others tab will only show the single input)
+-- WalkSpeed GUI (kept as optional panel but Others tab will show the single input)
 -- ======================
 local WalkSpeedActive = false
 local ws_frame = nil
@@ -1852,6 +1852,48 @@ local function disableHitboxExtender()
 end
 
 -- ======================
+-- Esticar Tela (Screen Stretch) integration
+-- Adds option "Esticar Tela" to "Others" tab and integrates provided script.
+-- Toggleable, with adjustable factor (default 0.65).
+-- ======================
+local StretchActive = false
+local stretchConn = nil
+local StretchFactor = 0.65
+local Camera = workspace:FindFirstChild("CurrentCamera") or workspace.CurrentCamera
+
+local function enableStretch()
+    if StretchActive then return true end
+    StretchActive = true
+    -- set/get global table (keeps similarity to provided script)
+    getgenv().Resolution = getgenv().Resolution or {}
+    getgenv().Resolution[".gg/scripters"] = tonumber(getgenv().Resolution[".gg/scripters"]) or StretchFactor
+
+    if stretchConn then pcall(function() stretchConn:Disconnect() end) end
+    stretchConn = RunService.RenderStepped:Connect(function()
+        -- multiply camera CFrame each frame using provided matrix-like constructor
+        if Camera and Camera.Parent then
+            local factor = tonumber(getgenv().Resolution[".gg/scripters"]) or StretchFactor
+            -- follow original pattern (note: repeated multiplication will compound)
+            pcall(function()
+                Camera.CFrame = Camera.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, factor, 0, 0, 0, 1)
+            end)
+        end
+    end)
+    -- mark global as present (similar to provided script's final line) but keep nil when disabling
+    getgenv().gg_scripters = "Aori0001"
+    return true
+end
+
+local function disableStretch()
+    if not StretchActive then return false end
+    StretchActive = false
+    if stretchConn then pcall(function() stretchConn:Disconnect() end); stretchConn = nil end
+    -- optionally clear global marker so enabling again works predictably
+    pcall(function() getgenv().gg_scripters = nil end)
+    return false
+end
+
+-- ======================
 -- Tab builders
 -- ======================
 local function buildTexturesTab()
@@ -1996,7 +2038,7 @@ local function buildTeleportTab()
 end
 
 -- ======================
--- Tab behaviour (including Others tab with WalkSpeed and HitBox extender)
+-- Tab behaviour (including Others tab with WalkSpeed, HitBox extender and Esticar Tela)
 -- ======================
 local currentTab = tabNames[1]
 
@@ -2167,6 +2209,74 @@ local function setActiveTab(name)
 
         hbRow.LayoutOrder = 3
 
+        -- Esticar Tela toggle row
+        local stToggleRow, stUpdate = createToggle(ContentScroll, "Esticar Tela", StretchActive, function()
+            if StretchActive then
+                disableStretch()
+                return false
+            else
+                enableStretch()
+                return true
+            end
+        end)
+        stToggleRow.LayoutOrder = 4
+
+        -- Esticar Tela factor input row
+        local stRow = Instance.new("Frame", ContentScroll)
+        stRow.Size = UDim2.new(0.95, 0, 0, 44)
+        stRow.BackgroundColor3 = Color3.fromRGB(28,28,28)
+        local stCorner = Instance.new("UICorner", stRow); stCorner.CornerRadius = UDim.new(0,10)
+
+        local stLabel = Instance.new("TextLabel", stRow)
+        stLabel.Size = UDim2.new(1, -160, 1, 0)
+        stLabel.Position = UDim2.new(0, 12, 0, 0)
+        stLabel.BackgroundTransparency = 1
+        stLabel.Font = Enum.Font.Gotham
+        stLabel.TextSize = 14
+        stLabel.TextColor3 = Color3.fromRGB(210,210,210)
+        stLabel.TextXAlignment = Enum.TextXAlignment.Left
+        stLabel.Text = "Esticar Tela (valor) ex: 0.65"
+
+        local stTb = Instance.new("TextBox", stRow)
+        stTb.Size = UDim2.new(0, 100, 0, 28)
+        stTb.Position = UDim2.new(1, -160, 0.5, -14)
+        stTb.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        stTb.TextColor3 = Color3.fromRGB(240,240,240)
+        stTb.Font = Enum.Font.SourceSans
+        stTb.TextSize = 18
+        stTb.TextScaled = false
+        stTb.ClearTextOnFocus = true
+        stTb.PlaceholderText = "Ex: 0.65"
+        stTb.Text = tostring(getgenv().Resolution and getgenv().Resolution[".gg/scripters"] or StretchFactor)
+
+        local stApplyBtn = Instance.new("TextButton", stRow)
+        stApplyBtn.Size = UDim2.new(0, 72, 0, 28)
+        stApplyBtn.Position = UDim2.new(1, -86, 0.5, -14)
+        stApplyBtn.BackgroundColor3 = Color3.fromRGB(38,120,190)
+        stApplyBtn.Font = Enum.Font.GothamBold
+        stApplyBtn.TextSize = 14
+        stApplyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+        stApplyBtn.Text = "Aplicar"
+        local stApplyCorner = Instance.new("UICorner", stApplyBtn); stApplyCorner.CornerRadius = UDim.new(0,8)
+
+        local function applySTFromTextbox()
+            local v = tonumber(stTb.Text)
+            if v and v > 0 then
+                getgenv().Resolution = getgenv().Resolution or {}
+                getgenv().Resolution[".gg/scripters"] = v
+                stTb.Text = tostring(v)
+            else
+                stTb.Text = tostring(getgenv().Resolution and getgenv().Resolution[".gg/scripters"] or StretchFactor)
+            end
+        end
+
+        stApplyBtn.MouseButton1Click:Connect(applySTFromTextbox)
+        stTb.FocusLost:Connect(function(enterPressed)
+            if enterPressed then applySTFromTextbox() end
+        end)
+
+        stRow.LayoutOrder = 5
+
     else
         clearContent()
     end
@@ -2251,7 +2361,7 @@ task.spawn(function()
     menuOpen = true
 end)
 
--- Expose toggles and utilities globally (same as original) + WalkSpeed + HitBox extender
+-- Expose toggles and utilities globally (same as original) + WalkSpeed + HitBox extender + Esticar Tela
 _G.FTF = _G.FTF or {}
 _G.FTF.EnablePlayerESP = enablePlayerESP
 _G.FTF.DisablePlayerESP = disablePlayerESP
@@ -2271,5 +2381,7 @@ _G.FTF.EnableWalkSpeedGUI = enableWalkSpeedGUI
 _G.FTF.DisableWalkSpeedGUI = disableWalkSpeedGUI
 _G.FTF.EnableHitBoxExtender = enableHitboxExtender
 _G.FTF.DisableHitBoxExtender = disableHitboxExtender
+_G.FTF.EnableStretch = enableStretch
+_G.FTF.DisableStretch = disableStretch
 
-print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained. 'Others' category now contains WalkSpeed quick input and HitBox extender.")
+print("[FTF_ESP] Script loaded — Computer ESP replaced with provided method; UI/menu retained. 'Others' category now contains WalkSpeed quick input, HitBox extender and Esticar Tela.")
