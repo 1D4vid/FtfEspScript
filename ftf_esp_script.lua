@@ -1,9 +1,3 @@
--- FTF ESP — By David
--- Integrated Contador de Down, BeastPower Time and Computer ProgressBar (toggleable)
--- Updated: Computer ESP replaced with the method you provided (fixed), menu/draggable/UI kept as requested.
--- WalkSpeed quick input added into Others category (single input field).
--- Added: "HitBox extender" and "Esticar Tela" options in "Others" tab.
-
 local ICON_IMAGE_ID = ""
 local DOWN_COUNT_DURATION = 28
 local REMOVE_TEXTURES_BATCH = 250
@@ -39,7 +33,6 @@ local function batchIterate(list, batchSize, fn)
     end
 end
 
--- Cleanup previous UI instances
 for _,c in pairs(CoreGui:GetChildren()) do
     if c.Name == "FTF_ESP_GUI_DAVID" then pcall(function() c:Destroy() end) end
 end
@@ -54,7 +47,6 @@ ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent or ScreenGui.Parent ~= CoreGui then ScreenGui.Parent = PlayerGui end
 
--- Generic highlight creator (used by several features)
 local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outlineTrans)
     if not adornee then return nil end
     local h = Instance.new("Highlight")
@@ -68,9 +60,6 @@ local function createHighlight(adornee, fillColor, outlineColor, fillTrans, outl
     return h
 end
 
--- ======================
--- Player ESP
--- ======================
 local PlayerESPEnabled = false
 local playerHighlights = {}
 local playerNameTags = {}
@@ -148,9 +137,6 @@ Players.PlayerAdded:Connect(function(p)
 end)
 Players.PlayerRemoving:Connect(function(p) removePlayerESP(p) end)
 
--- ======================
--- Computer ESP (USER METHOD: replaced to fix bug)
--- ======================
 local ComputerESPEnabled = false
 local computerInfo = {}
 
@@ -285,7 +271,6 @@ local function enableComputerESP()
     if ComputerESPEnabled then return true end
     ComputerESPEnabled = true
 
-    -- initial pass
     scanAndWireExistingComputers()
 
     compAddConn = workspace.DescendantAdded:Connect(function(obj)
@@ -331,9 +316,6 @@ local function disableComputerESP()
     return false
 end
 
--- ======================
--- Freeze Pod ESP
--- ======================
 local FreezeESPEnabled = false
 local freezeHighlights = {}
 local freezeAddedConn, freezeRemovedConn
@@ -369,9 +351,6 @@ local function disableFreezeESP()
     return false
 end
 
--- ======================
--- Door ESP
--- ======================
 local DoorESPEnabled = false
 local doorHighlights = {}
 local doorAddedConn, doorRemovedConn
@@ -410,9 +389,6 @@ local function disableDoorESP()
     return false
 end
 
--- ======================
--- White Brick (textures)
--- ======================
 local WhiteBrickActive = false
 local whiteBackup = {}
 
@@ -468,9 +444,6 @@ local function disableWhiteBrick()
     return false
 end
 
--- ======================
--- Snow Mode
--- ======================
 local SnowActive = false
 local snowBackupParts = {}
 local snowPartConn = nil
@@ -571,9 +544,6 @@ local function disableSnow()
     return false
 end
 
--- ======================
--- Remove Textures (performance)
--- ======================
 local RemoveTexturesActive = false
 local rt_parts = {}
 local rt_meshparts = {}
@@ -722,9 +692,6 @@ local function disableRemoveTextures()
     return false
 end
 
--- ======================
--- Ragdoll Countdown
--- ======================
 local RagdollCountdownActive = false
 local ragdoll_whitelist_strings = {
     {49,51,57,52,57,56,53,52,52,48},
@@ -1002,9 +969,6 @@ local function disableRagdollCountdown()
     return false
 end
 
--- ======================
--- Beast Power Time
--- ======================
 local BeastPowerActive = false
 local beast = {
     heartbeatConn = nil,
@@ -1141,22 +1105,17 @@ local function disableBeastPowerTime()
     return false
 end
 
--- ======================
--- Computer ProgressBar (replaced with provided implementation — adjusted to work with this hub)
--- ======================
 local ComputerProgressActive = false
-local progressEnabled = true -- visible/enabled state for bars & highlights (toggleable with P)
-local progressHeartbeatConns = {} -- model -> conn
+local progressEnabled = true
+local progressHeartbeatConns = {}
 local progressReloadTask = nil
 local progressRunning = false
 
--- Toggle visibility (P) — toggles enabled state of ProgressBar billboards and ComputerHighlight highlights
 local toggleKey = Enum.KeyCode.P
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == toggleKey then
         progressEnabled = not progressEnabled
-        -- toggle Billboards in our ScreenGui and Highlights in workspace
         for _, descendant in ipairs(ScreenGui:GetDescendants()) do
             if descendant:IsA("BillboardGui") and descendant.Name == "ProgressBar" then
                 descendant.Enabled = progressEnabled
@@ -1167,7 +1126,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 descendant.Enabled = progressEnabled
             end
         end
-        print("[FTF_ESP] Progress toggled:", progressEnabled)
     end
 end)
 
@@ -1181,7 +1139,7 @@ local function createProgressBar(parentPart)
     billboard.StudsOffset = Vector3.new(0, 4.2, 0)
     billboard.AlwaysOnTop = true
     billboard.Enabled = progressEnabled
-    billboard.Parent = ScreenGui -- parent to hub ScreenGui so it displays
+    billboard.Parent = ScreenGui
 
     local background = Instance.new("Frame")
     background.Size = UDim2.new(1, 0, 1, 0)
@@ -1217,7 +1175,6 @@ local function setupComputerProgress(tableModel)
     if not tableModel or not tableModel:IsA("Model") then return end
     if progressHeartbeatConns[tableModel] then return end
 
-    -- find a good adornee part (Screen, PrimaryPart, or first BasePart)
     local screenPart = tableModel:FindFirstChild("Screen")
     if not (screenPart and screenPart:IsA("BasePart")) then
         if tableModel.PrimaryPart and tableModel.PrimaryPart:IsA("BasePart") then
@@ -1251,7 +1208,6 @@ local function setupComputerProgress(tableModel)
         if screen and screen:IsA("BasePart") then
             highlight.FillColor = screen.Color
             highlight.OutlineColor = screen.Color
-            -- also prefer adornee color if needed
             if billboard and billboard.Parent then
                 billboard.Adornee = screen
             end
@@ -1328,12 +1284,10 @@ local function enableComputerProgress()
     if ComputerProgressActive then return true end
     ComputerProgressActive = true
     progressEnabled = true
-    -- clean any leftovers before starting
     for mdl, _ in pairs(progressHeartbeatConns) do
         teardownComputerProgress(mdl)
     end
     progressHeartbeatConns = {}
-
     progressReloadTask = task.spawn(reloadComputersTask)
     return true
 end
@@ -1342,37 +1296,23 @@ local function disableComputerProgress()
     if not ComputerProgressActive then return false end
     ComputerProgressActive = false
     progressEnabled = false
-
-    -- disconnect and destroy all progress components
     for mdl, info in pairs(progressHeartbeatConns) do
         teardownComputerProgress(mdl)
     end
     progressHeartbeatConns = {}
-
-    -- ensure no lingering billboards in ScreenGui
     for _, descendant in ipairs(ScreenGui:GetDescendants()) do
         if descendant:IsA("BillboardGui") and descendant.Name == "ProgressBar" then
             safeDestroy(descendant)
         end
     end
-    -- ensure highlights removed
     for _, descendant in ipairs(Workspace:GetDescendants()) do
         if descendant:IsA("Highlight") and descendant.Name == "ComputerHighlight" then
             safeDestroy(descendant)
         end
     end
-
-    -- stop reload task if running
     progressReloadTask = nil
     return false
 end
-
--- ======================
--- UI: vertical-left model; close is "X"; menu/draggable
--- (the UI layout has been kept as requested; the Computer ESP now uses the user-provided method)
--- WalkSpeed Quick Input added into Others tab (single input)
--- Added HitBox extender and Esticar Tela integrations below.
--- ======================
 
 local LoadingPanel = Instance.new("Frame", ScreenGui)
 LoadingPanel.Name = "FTF_LoadingPanel"
@@ -1449,7 +1389,6 @@ MobileToggle.TextColor3 = Color3.fromRGB(220,220,220)
 MobileToggle.Visible = UserInputService.TouchEnabled and true or false
 local mtCorner = Instance.new("UICorner", MobileToggle); mtCorner.CornerRadius = UDim.new(0,12)
 
--- Menu dimensions
 local MENU_W, MENU_H = 720, 420
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "FTF_Main"
@@ -1460,7 +1399,6 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Visible = false
 local mfCorner = Instance.new("UICorner", MainFrame); mfCorner.CornerRadius = UDim.new(0,12)
 
--- TitleBar (draggable)
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
 TitleBar.Position = UDim2.new(0,0,0,0)
@@ -1475,7 +1413,6 @@ TitleLbl.BackgroundTransparency = 1
 TitleLbl.Position = UDim2.new(0,12,0,8)
 TitleLbl.Size = UDim2.new(0,300,0,24)
 
--- Window control placeholders (Minimize and Close 'X')
 local WinControls = Instance.new("Frame", TitleBar)
 WinControls.Size = UDim2.new(0,90,0,24)
 WinControls.Position = UDim2.new(1,-100,0,8)
@@ -1499,7 +1436,6 @@ CloseBtn.Size = UDim2.new(0,36,0,24)
 CloseBtn.Position = UDim2.new(0,54,0,0)
 CloseBtn.TextColor3 = Color3.fromRGB(200,200,200)
 
--- Sidebar (original categories + "Others")
 local Sidebar = Instance.new("Frame", MainFrame)
 Sidebar.Name = "Sidebar"
 Sidebar.Size = UDim2.new(0,200,1, -40)
@@ -1512,7 +1448,6 @@ sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
 sideLayout.Padding = UDim.new(0,12)
 
--- include "Others" category
 local tabNames = {"ESP","Textures","Timers","Teleport","Others"}
 
 local Tabs = {}
@@ -1555,7 +1490,6 @@ for i,name in ipairs(tabNames) do
     Tabs[name] = b
 end
 
--- Content area
 local ContentArea = Instance.new("Frame", MainFrame)
 ContentArea.Name = "ContentArea"
 ContentArea.Size = UDim2.new(1, -200, 1, -40)
@@ -1591,7 +1525,6 @@ contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     ContentScroll.CanvasSize = UDim2.new(0,0,0, contentLayout.AbsoluteContentSize.Y + 18)
 end)
 
--- Builders (from original script)
 local function createToggle(parent, labelText, initial, onToggle)
     local frame = Instance.new("Frame", parent)
     frame.Size = UDim2.new(0.95,0,0,44); frame.BackgroundColor3 = Color3.fromRGB(28,28,28)
@@ -1655,9 +1588,6 @@ local function clearContent()
     for _,v in pairs(ContentScroll:GetChildren()) do if v:IsA("Frame") or v:IsA("TextLabel") then safeDestroy(v) end end
 end
 
--- ======================
--- WalkSpeed GUI (kept as optional panel but Others tab will show the single input)
--- ======================
 local WalkSpeedActive = false
 local ws_frame = nil
 local ws_numBox = nil
@@ -1794,17 +1724,11 @@ local function disableWalkSpeedGUI()
     return false
 end
 
--- ======================
--- HitBox extender (integrated from provided head-size script)
--- Adds an option "HitBox extender" to the "Others" tab. Toggleable.
--- ======================
 local HitboxActive = false
 local hitboxConn = nil
 
--- compatibility defaults
 _G.HeadSize = _G.HeadSize or 10
 _G.HeadSize = tonumber(_G.HeadSize) or 10
--- original script used _G.Disabled = true to mean "active"; here default is false (inactive)
 _G.Disabled = _G.Disabled == nil and false or _G.Disabled
 
 local function hitboxLoop()
@@ -1818,10 +1742,8 @@ local function hitboxLoop()
                 if hrp then
                     hrp.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
                     hrp.CanCollide = false
-                    -- Torna invisível mas continua funcionando
                     hrp.Transparency = 1
                     hrp.CastShadow = false
-                    -- Garante invisibilidade só no cliente (quando disponível)
                     if hrp.LocalTransparencyModifier ~= nil then
                         hrp.LocalTransparencyModifier = 1
                     end
@@ -1835,7 +1757,7 @@ local function enableHitboxExtender()
     if HitboxActive then return true end
     HitboxActive = true
     _G.HeadSize = _G.HeadSize or 10
-    _G.Disabled = true -- follow original semantics: true -> active
+    _G.Disabled = true
     if hitboxConn then pcall(function() hitboxConn:Disconnect() end) end
     hitboxConn = RunService.RenderStepped:Connect(function()
         hitboxLoop()
@@ -1851,11 +1773,6 @@ local function disableHitboxExtender()
     return false
 end
 
--- ======================
--- Esticar Tela (Screen Stretch) integration
--- Adds option "Esticar Tela" to "Others" tab and integrates provided script.
--- Toggleable, with adjustable factor (default 0.65).
--- ======================
 local StretchActive = false
 local stretchConn = nil
 local StretchFactor = 0.65
@@ -1864,22 +1781,18 @@ local Camera = workspace:FindFirstChild("CurrentCamera") or workspace.CurrentCam
 local function enableStretch()
     if StretchActive then return true end
     StretchActive = true
-    -- set/get global table (keeps similarity to provided script)
     getgenv().Resolution = getgenv().Resolution or {}
     getgenv().Resolution[".gg/scripters"] = tonumber(getgenv().Resolution[".gg/scripters"]) or StretchFactor
 
     if stretchConn then pcall(function() stretchConn:Disconnect() end) end
     stretchConn = RunService.RenderStepped:Connect(function()
-        -- multiply camera CFrame each frame using provided matrix-like constructor
         if Camera and Camera.Parent then
             local factor = tonumber(getgenv().Resolution[".gg/scripters"]) or StretchFactor
-            -- follow original pattern (note: repeated multiplication will compound)
             pcall(function()
                 Camera.CFrame = Camera.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, factor, 0, 0, 0, 1)
             end)
         end
     end)
-    -- mark global as present (similar to provided script's final line) but keep nil when disabling
     getgenv().gg_scripters = "Aori0001"
     return true
 end
@@ -1888,14 +1801,10 @@ local function disableStretch()
     if not StretchActive then return false end
     StretchActive = false
     if stretchConn then pcall(function() stretchConn:Disconnect() end); stretchConn = nil end
-    -- optionally clear global marker so enabling again works predictably
     pcall(function() getgenv().gg_scripters = nil end)
     return false
 end
 
--- ======================
--- Tab builders
--- ======================
 local function buildTexturesTab()
     clearContent()
     local tb1, set1 = createToggle(ContentScroll, "Ativar Textures Tijolos Brancos", WhiteBrickActive, function()
@@ -2037,9 +1946,6 @@ local function buildTeleportTab()
     end
 end
 
--- ======================
--- Tab behaviour (including Others tab with WalkSpeed, HitBox extender and Esticar Tela)
--- ======================
 local currentTab = tabNames[1]
 
 local function setActiveTab(name)
@@ -2066,7 +1972,6 @@ local function setActiveTab(name)
     elseif currentTab == "Others" then
         clearContent()
 
-        -- WalkSpeed input row
         local row = Instance.new("Frame", ContentScroll)
         row.Size = UDim2.new(0.95, 0, 0, 44)
         row.BackgroundColor3 = Color3.fromRGB(28,28,28)
@@ -2093,7 +1998,6 @@ local function setActiveTab(name)
         tb.ClearTextOnFocus = true
         tb.PlaceholderText = "Ex: 16"
 
-        -- populate with current value (fallback to 16)
         local function getCurrentWalkSpeed()
             local cur = ws_number
             if not cur then
@@ -2120,8 +2024,7 @@ local function setActiveTab(name)
         local function applyValueFromTextbox()
             local v = tonumber(tb.Text)
             if v and v > 0 then
-                ws_number = v -- store for the optional walkspeed panel
-                -- try to apply to current humanoid
+                ws_number = v
                 local char = LocalPlayer.Character
                 if char then
                     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -2142,7 +2045,6 @@ local function setActiveTab(name)
 
         row.LayoutOrder = 1
 
-        -- HitBox extender toggle row
         local hbToggleRow, hbUpdate = createToggle(ContentScroll, "HitBox extender", HitboxActive, function()
             if HitboxActive then
                 disableHitboxExtender()
@@ -2154,7 +2056,6 @@ local function setActiveTab(name)
         end)
         hbToggleRow.LayoutOrder = 2
 
-        -- HitBox size input row
         local hbRow = Instance.new("Frame", ContentScroll)
         hbRow.Size = UDim2.new(0.95, 0, 0, 44)
         hbRow.BackgroundColor3 = Color3.fromRGB(28,28,28)
@@ -2209,7 +2110,6 @@ local function setActiveTab(name)
 
         hbRow.LayoutOrder = 3
 
-        -- Esticar Tela toggle row
         local stToggleRow, stUpdate = createToggle(ContentScroll, "Esticar Tela", StretchActive, function()
             if StretchActive then
                 disableStretch()
@@ -2221,7 +2121,6 @@ local function setActiveTab(name)
         end)
         stToggleRow.LayoutOrder = 4
 
-        -- Esticar Tela factor input row
         local stRow = Instance.new("Frame", ContentScroll)
         stRow.Size = UDim2.new(0.95, 0, 0, 44)
         stRow.BackgroundColor3 = Color3.fromRGB(28,28,28)
@@ -2288,10 +2187,8 @@ for name, btn in pairs(Tabs) do
     end)
 end
 
--- Initialize selection
 setActiveTab(currentTab)
 
--- Draggable TitleBar
 do
     local dragging = false
     local dragStart = Vector2.new(0,0)
@@ -2318,7 +2215,6 @@ do
     end)
 end
 
--- Close/minimize controls
 MinimizeBtn.MouseButton1Click:Connect(function()
     pcall(updateMinimizedAvatar)
     MainFrame.Visible = false
@@ -2336,7 +2232,6 @@ MobileToggle.MouseButton1Click:Connect(function()
     if MainFrame.Visible then MinimizedIcon.Visible = false end
 end)
 
--- Keyboard toggle (K)
 local menuOpen = false
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
@@ -2347,7 +2242,6 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Finalize startup
 task.spawn(function()
     task.wait(1.1)
     safeDestroy(LoadingPanel)
@@ -2361,7 +2255,6 @@ task.spawn(function()
     menuOpen = true
 end)
 
--- Expose toggles and utilities globally (same as original) + WalkSpeed + HitBox extender + Esticar Tela
 _G.FTF = _G.FTF or {}
 _G.FTF.EnablePlayerESP = enablePlayerESP
 _G.FTF.DisablePlayerESP = disablePlayerESP
